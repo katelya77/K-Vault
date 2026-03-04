@@ -609,7 +609,7 @@
 
   function getEffectNodeCount(intensity, mobile) {
     var count = Math.round(8 + intensity * 0.32);
-    if (mobile) count = Math.max(6, Math.round(count * 0.45));
+    if (mobile) count = Math.max(5, Math.round(count * 0.35));
     return Math.min(40, Math.max(4, count));
   }
 
@@ -748,7 +748,7 @@
     render.style = style;
     render.intensity = intensity;
     render.mobile = mobile;
-    render.maxFps = mobile ? 18 : 30;
+    render.maxFps = mobile ? 14 : 30;
 
     if (!render.ctx || style === "none" || style === "texture" || prefersReducedMotion()) {
       return;
@@ -875,7 +875,7 @@
     }
 
     if (optimizedMobile && (style === "math" || style === "particle")) {
-      intensity = Math.max(8, Math.round(intensity * 0.55));
+      intensity = Math.max(6, Math.round(intensity * 0.45));
       root.setAttribute("data-ui-mobile-optimized", "true");
     } else {
       root.removeAttribute("data-ui-mobile-optimized");

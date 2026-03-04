@@ -2,6 +2,10 @@ html[data-theme="light"] {
   color-scheme: light;
 }
 
+[v-cloak] {
+  display: none !important;
+}
+
 html[data-theme="dark"] {
   color-scheme: dark;
   --primary-color: #9aa9ff;

@@ -8,7 +8,7 @@
   <link rel="apple-touch-icon" href="/logo.png">
   <link rel="shortcut icon" href="/favicon.ico">
   <link rel="stylesheet" href="/theme.css">
-  <script src="/theme.js"></script>
+  <script src="/theme.js?v=20260305"></script>
   <!-- Import CSS -->
   <link rel="stylesheet" href="./admin-imgtc.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/element-ui@2.15.3/lib/theme-chalk/index.css">
@@ -813,7 +813,7 @@
   <link rel="stylesheet" href="/mobile-refactor.css">
 </head>
 <body>
-  <div id="app">
+  <div id="app" v-cloak>
     <el-container>
       <el-header>
         <div class="header-content">
@@ -3785,11 +3785,98 @@
           return;
         }
 
+        const requestUiConfigDirect = async (method, config) => {
+          const url = method === 'GET'
+            ? `/api/ui-config?_ts=${Date.now()}`
+            : '/api/ui-config';
+          const init = {
+            method,
+            credentials: 'include',
+            headers: {
+              Accept: 'application/json'
+            }
+          };
+          if (method !== 'GET') {
+            init.headers['Content-Type'] = 'application/json';
+            init.body = JSON.stringify({ config });
+          }
+
+          const response = await fetch(url, init);
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok || payload?.success === false) {
+            const detail = payload?.error?.message || payload?.error || `请求失败 (${response.status})`;
+            throw new Error(detail);
+          }
+          return payload;
+        };
+
+        const syncFromServerFallback = async () => {
+          try {
+            const payload = await requestUiConfigDirect('GET');
+            const config = payload?.config || payload?.settings || {};
+            if (typeof manager.setSettings === 'function') {
+              manager.setSettings(config, { persist: true, silent: true });
+            }
+            return {
+              success: true,
+              source: 'server',
+              settings: config,
+              binding: payload?.binding || ''
+            };
+          } catch (error) {
+            return {
+              success: false,
+              source: 'local',
+              settings: manager.getSettings(),
+              error: error?.message || String(error),
+              binding: ''
+            };
+          }
+        };
+
+        const saveToServerFallback = async (values) => {
+          const localApplied = typeof manager.setSettings === 'function'
+            ? manager.setSettings(values, { persist: true, silent: true })
+            : values;
+          try {
+            const payload = await requestUiConfigDirect('POST', localApplied);
+            const config = payload?.config || payload?.settings || localApplied;
+            const verifyPayload = await requestUiConfigDirect('GET');
+            const verifiedConfig = verifyPayload?.config || verifyPayload?.settings || {};
+            const isMatch = JSON.stringify(verifiedConfig) === JSON.stringify(config);
+            if (!isMatch) {
+              throw new Error('保存后回读校验失败，请检查 KV 绑定与 Functions 日志。');
+            }
+            if (typeof manager.setSettings === 'function') {
+              manager.setSettings(verifiedConfig, { persist: true, silent: true });
+            }
+            return {
+              success: true,
+              source: 'server',
+              settings: verifiedConfig,
+              binding: verifyPayload?.binding || payload?.binding || ''
+            };
+          } catch (error) {
+            return {
+              success: false,
+              source: 'local',
+              settings: localApplied,
+              error: error?.message || String(error),
+              binding: ''
+            };
+          }
+        };
+
         if (typeof manager.syncFromServer === 'function') {
           const syncResult = await manager.syncFromServer({
             silent: true,
             applyLocalOnFailure: true
           });
+          if (syncResult && syncResult.success === false && syncResult.error) {
+            this.$message.warning(`读取服务端配置失败，已使用本地缓存：${syncResult.error}`);
+          }
+        } else {
+          const syncResult = await syncFromServerFallback();
           if (syncResult && syncResult.success === false && syncResult.error) {
             this.$message.warning(`读取服务端配置失败，已使用本地缓存：${syncResult.error}`);
           }
@@ -4029,12 +4116,7 @@
 
             const saveRequest = typeof manager.saveToServer === 'function'
               ? manager.saveToServer(values)
-              : Promise.resolve({
-                  success: false,
-                  source: 'local',
-                  settings: manager.setSettings(values, { persist: true }),
-                  error: '当前前端脚本未启用服务端同步能力，请刷新页面后重试。'
-                });
+              : saveToServerFallback(values);
 
             saveRequest
               .then((result) => {
