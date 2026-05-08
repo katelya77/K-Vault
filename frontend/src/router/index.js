@@ -9,24 +9,31 @@ import StatusView from '../views/StatusView.vue';
 
 const routes = [
   {
-    path: '/login',
+    path: '/v1/login',
     name: 'login',
     component: LoginView,
     meta: { public: true },
   },
   {
-    path: '/',
+    path: '/v1',
     component: AppShell,
     children: [
-      { path: '', redirect: '/upload' },
+      { path: '', redirect: '/v1/upload' },
       { path: 'upload', name: 'upload', component: UploadView },
       { path: 'drive', name: 'drive', component: DriveView, meta: { requiresAdmin: true } },
-      { path: 'admin', redirect: '/drive' },
+      { path: 'admin', redirect: '/v1/drive' },
       { path: 'storage', name: 'storage', component: StorageView, meta: { requiresAdmin: true } },
       { path: 'status', name: 'status', component: StatusView },
     ],
   },
-  { path: '/:pathMatch(.*)*', redirect: '/upload' },
+  { path: '/', redirect: '/v1/upload' },
+  { path: '/login', redirect: '/v1/login' },
+  { path: '/upload', redirect: '/v1/upload' },
+  { path: '/drive', redirect: '/v1/drive' },
+  { path: '/admin', redirect: '/v1/drive' },
+  { path: '/storage', redirect: '/v1/storage' },
+  { path: '/status', redirect: '/v1/status' },
+  { path: '/:pathMatch(.*)*', redirect: '/v1/upload' },
 ];
 
 const router = createRouter({
@@ -42,7 +49,7 @@ router.beforeEach(async (to) => {
 
   if (to.name === 'login') {
     if (!authStore.authRequired || authStore.authenticated) {
-      const target = typeof to.query.redirect === 'string' ? to.query.redirect : '/upload';
+      const target = typeof to.query.redirect === 'string' ? to.query.redirect : '/v1/upload';
       return target;
     }
     return true;
