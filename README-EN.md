@@ -553,11 +553,6 @@ This project is a deep refactor and secondary development based on [K-Vault (kat
 
 - **License Transition**: The original code (up to commit `decdb04`) was licensed under the **CC0 1.0 Universal** license.
 - **Current License**: Starting from commit `decdb04`, this project has officially transitioned to the **MIT License**.
-- **Refactoring Highlights**: This project introduces significant changes to the original codebase, including:
-  - Migrated core storage architecture to **Cloudflare D1** database.
-  - Completely rewritten **UI/UX** for a more intuitive cloud drive experience.
-  - Added new **file sharing** and permission management systems.
-  - Removed automatic download link generation to enhance privacy and security.
 
 All subsequent features and code refactoring are protected under the **MIT License**. Please ensure that the copyright notice and permission notice are included in all copies or substantial portions of the software.
 

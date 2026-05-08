@@ -1,4 +1,7 @@
-PRAGMA journal_mode = WAL;
+-- K-Vault D1 Database Schema
+-- 用于 Cloudflare Pages 部署
+
+-- 启用外键约束
 PRAGMA foreign_keys = ON;
 
 -- ============================================
@@ -17,25 +20,6 @@ CREATE TABLE IF NOT EXISTS folders (
 CREATE INDEX IF NOT EXISTS idx_folders_parent_id ON folders(parent_id);
 CREATE INDEX IF NOT EXISTS idx_folders_path ON folders(path);
 CREATE INDEX IF NOT EXISTS idx_folders_updated_at ON folders(updated_at DESC);
-
--- ============================================
--- 存储配置表
--- ============================================
-CREATE TABLE IF NOT EXISTS storage_configs (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  type TEXT NOT NULL,
-  encrypted_payload TEXT NOT NULL,
-  is_default INTEGER NOT NULL DEFAULT 0,
-  enabled INTEGER NOT NULL DEFAULT 1,
-  metadata_json TEXT NOT NULL DEFAULT '{}',
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_storage_configs_type ON storage_configs(type);
-CREATE INDEX IF NOT EXISTS idx_storage_configs_default ON storage_configs(is_default);
-CREATE INDEX IF NOT EXISTS idx_storage_configs_enabled ON storage_configs(enabled);
 
 -- ============================================
 -- 文件元数据表
@@ -75,6 +59,25 @@ CREATE INDEX IF NOT EXISTS idx_files_folder_created ON files(folder_id, created_
 CREATE INDEX IF NOT EXISTS idx_files_folder_storage ON files(folder_id, storage_type);
 
 -- ============================================
+-- 存储配置表
+-- ============================================
+CREATE TABLE IF NOT EXISTS storage_configs (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  type TEXT NOT NULL,
+  encrypted_payload TEXT NOT NULL,
+  is_default INTEGER NOT NULL DEFAULT 0,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_storage_configs_type ON storage_configs(type);
+CREATE INDEX IF NOT EXISTS idx_storage_configs_default ON storage_configs(is_default);
+CREATE INDEX IF NOT EXISTS idx_storage_configs_enabled ON storage_configs(enabled);
+
+-- ============================================
 -- 分享链接表
 -- ============================================
 CREATE TABLE IF NOT EXISTS shares (
@@ -109,50 +112,8 @@ CREATE INDEX IF NOT EXISTS idx_api_tokens_token_hash ON api_tokens(token_hash);
 CREATE INDEX IF NOT EXISTS idx_api_tokens_enabled ON api_tokens(enabled);
 
 -- ============================================
--- 虚拟文件夹表（兼容旧数据）
+-- 应用设置表
 -- ============================================
-CREATE TABLE IF NOT EXISTS virtual_folders (
-  path TEXT PRIMARY KEY,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_virtual_folders_updated_at ON virtual_folders(updated_at DESC);
-
-CREATE TABLE IF NOT EXISTS sessions (
-  token TEXT PRIMARY KEY,
-  user_name TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  expires_at INTEGER NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
-
-CREATE TABLE IF NOT EXISTS guest_upload_counters (
-  id TEXT PRIMARY KEY,
-  ip TEXT NOT NULL,
-  day TEXT NOT NULL,
-  count INTEGER NOT NULL DEFAULT 0,
-  updated_at INTEGER NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_guest_upload_counters_day ON guest_upload_counters(day);
-
-CREATE TABLE IF NOT EXISTS chunk_uploads (
-  upload_id TEXT PRIMARY KEY,
-  file_name TEXT NOT NULL,
-  file_size INTEGER NOT NULL,
-  file_type TEXT,
-  total_chunks INTEGER NOT NULL,
-  storage_mode TEXT,
-  storage_config_id TEXT,
-  folder_path TEXT NOT NULL DEFAULT '',
-  created_at INTEGER NOT NULL,
-  expires_at INTEGER NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_chunk_uploads_expires_at ON chunk_uploads(expires_at);
-
 CREATE TABLE IF NOT EXISTS app_settings (
   key TEXT PRIMARY KEY,
   value_json TEXT NOT NULL,
@@ -160,3 +121,9 @@ CREATE TABLE IF NOT EXISTS app_settings (
 );
 
 CREATE INDEX IF NOT EXISTS idx_app_settings_updated_at ON app_settings(updated_at DESC);
+
+-- ============================================
+-- 初始化根文件夹
+-- ============================================
+INSERT OR IGNORE INTO folders (id, name, parent_id, path, created_at, updated_at)
+VALUES ('root', 'root', NULL, '/', strftime('%s', 'now') * 1000, strftime('%s', 'now') * 1000);

@@ -8,6 +8,7 @@
     "start": "npx wrangler pages dev ./ --kv \"img_url\" --r2=R2_BUCKET --compatibility-date=2026-05-03 --port 8080 --binding BASIC_USER=admin --binding BASIC_PASS=123 --persist-to ./data",
     "pages:r2:doctor": "node scripts/cloudflare-pages-r2-doctor.js",
     "docker:init-env": "node scripts/bootstrap-env.js",
+    "migrate:sqlite": "node scripts/migrate-to-sqlite.js",
     "server:dev": "npm --prefix server run dev",
     "frontend:dev": "npm --prefix frontend run dev",
     "frontend:build": "npm --prefix frontend run build",

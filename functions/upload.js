@@ -1,4 +1,4 @@
-﻿import { errorHandling, telemetryData } from "./utils/middleware";
+import { errorHandling, telemetryData } from "./utils/middleware";
 import { checkAuthentication, isAuthRequired } from "./utils/auth.js";
 import { checkGuestUpload, incrementGuestCount } from "./utils/guest.js";
 import { createS3Client } from "./utils/s3client.js";
@@ -16,6 +16,62 @@ import {
   shouldUseSignedTelegramLinks,
   shouldWriteTelegramMetadata,
 } from "./utils/telegram.js";
+import { FileRepository, FolderRepository } from "../server/lib/db/repository.js";
+
+function generateFileId() {
+  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  let output = '';
+  for (let i = 0; i < 16; i += 1) {
+    output += chars[bytes[i] % chars.length];
+  }
+  return output;
+}
+
+async function saveFileMetadata(env, fileData) {
+  if (!env.DB) {
+    console.warn('Database not configured, skipping metadata save');
+    return null;
+  }
+
+  try {
+    const fileRepo = new FileRepository(env.DB);
+    
+    const id = fileData.id || generateFileId();
+    
+    let folderId = null;
+    if (fileData.folderPath) {
+      const folderRepo = new FolderRepository(env.DB);
+      const folder = await folderRepo.findByPath(fileData.folderPath);
+      if (folder) {
+        folderId = folder.id;
+      }
+    }
+
+    const file = await fileRepo.create({
+      id,
+      storageConfigId: fileData.storageConfigId || 'default',
+      storageType: fileData.storageType || 'telegram',
+      storageKey: fileData.storageKey || id,
+      storageFileId: fileData.storageFileId || null,
+      fileName: fileData.fileName,
+      fileSize: fileData.fileSize,
+      mimeType: fileData.mimeType || 'application/octet-stream',
+      folderId,
+      folderPath: fileData.folderPath || '',
+      listType: fileData.listType || 'None',
+      label: fileData.label || 'None',
+      liked: false,
+      extraJson: fileData.extraJson || '{}'
+    });
+
+    return file;
+  } catch (error) {
+    console.error('Failed to save file metadata:', error);
+    return null;
+  }
+}
 
 export async function onRequestPost(context) {
   const { request, env } = context;
@@ -208,23 +264,36 @@ async function uploadToTelegramStorage(
     env
   );
 
-  if (env.img_url && shouldWriteTelegramMetadata(env)) {
+  const metadata = {
+    TimeStamp: Date.now(),
+    ListType: "None",
+    Label: "None",
+    liked: false,
+    fileName,
+    fileSize: uploadFile.size,
+    storageType: "telegram",
+    telegramFileId: fileId,
+    telegramMessageId: messageId || undefined,
+    signedLink: shouldUseSignedTelegramLinks(env),
+  };
+
+  if (env.DB) {
+    await saveFileMetadata(env, {
+      storageKey: `${fileId}.${fileExtension}`,
+      storageFileId: fileId,
+      fileName,
+      fileSize: uploadFile.size,
+      mimeType: uploadFile.type || 'application/octet-stream',
+      storageType: 'telegram',
+      folderPath,
+      extraJson: JSON.stringify({
+        telegramMessageId: messageId,
+        signedLink: metadata.signedLink
+      })
+    });
+  } else if (env.img_url && shouldWriteTelegramMetadata(env)) {
     await env.img_url.put(`${fileId}.${fileExtension}`, "", {
-      metadata: appendCommonMetadata(
-        {
-          TimeStamp: Date.now(),
-          ListType: "None",
-          Label: "None",
-          liked: false,
-          fileName,
-          fileSize: uploadFile.size,
-          storageType: "telegram",
-          telegramFileId: fileId,
-          telegramMessageId: messageId || undefined,
-          signedLink: shouldUseSignedTelegramLinks(env),
-        },
-        folderPath
-      ),
+      metadata: appendCommonMetadata(metadata, folderPath),
     });
   }
 
@@ -336,7 +405,17 @@ async function uploadToR2(file, fileName, fileExtension, env, folderPath = "") {
       customMetadata: { fileName, uploadTime: Date.now().toString() },
     });
 
-    if (env.img_url) {
+    if (env.DB) {
+      await saveFileMetadata(env, {
+        storageKey: `r2:${objectKey}`,
+        storageFileId: objectKey,
+        fileName,
+        fileSize: file.size,
+        mimeType: file.type || 'application/octet-stream',
+        storageType: 'r2',
+        folderPath
+      });
+    } else if (env.img_url) {
       await env.img_url.put(`r2:${objectKey}`, "", {
         metadata: appendCommonMetadata(
           {
@@ -379,7 +458,17 @@ async function uploadToS3(file, fileName, fileExtension, env, folderPath = "") {
       },
     });
 
-    if (env.img_url) {
+    if (env.DB) {
+      await saveFileMetadata(env, {
+        storageKey: `s3:${objectKey}`,
+        storageFileId: objectKey,
+        fileName,
+        fileSize: file.size,
+        mimeType: file.type || 'application/octet-stream',
+        storageType: 's3',
+        folderPath
+      });
+    } else if (env.img_url) {
       await env.img_url.put(`s3:${objectKey}`, "", {
         metadata: appendCommonMetadata(
           {

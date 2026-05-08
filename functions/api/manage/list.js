@@ -1,279 +1,137 @@
-﻿const INVALID_PREFIXES = ['session:', 'chunk:', 'upload:', 'temp:'];
+/**
+ * 文件列表 API - 基于数据库实现
+ * 支持高效分页和多维度查询
+ */
 
-const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tiff', 'ico', 'svg', 'heic', 'heif', 'avif']);
-const VIDEO_EXTS = new Set(['mp4', 'webm', 'ogg', 'avi', 'mov', 'wmv', 'flv', 'mkv', 'm4v', '3gp', 'ts']);
-const AUDIO_EXTS = new Set(['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'wma', 'ape', 'opus']);
+import { FileRepository } from '../../../server/lib/db/repository.js';
 
-function normalizeFolderPath(value = '') {
-  const raw = String(value || '').replace(/\\/g, '/').trim();
-  const output = [];
-  for (const part of raw.split('/')) {
-    const piece = part.trim();
-    if (!piece || piece === '.') continue;
-    if (piece === '..') {
-      output.pop();
-      continue;
-    }
-    output.push(piece);
-  }
-  return output.join('/');
+function parsePositiveInt(value, defaultValue, min = 1, max = 1000) {
+  const parsed = Number.parseInt(String(value || ''), 10);
+  if (!Number.isFinite(parsed)) return defaultValue;
+  return Math.max(min, Math.min(max, parsed));
 }
 
-function inferStorageType(name, metadata = {}) {
-  const explicit = metadata.storageType || metadata.storage;
-  if (explicit) return String(explicit).toLowerCase();
-
-  const keyName = String(name || '');
-  if (keyName.startsWith('r2:')) return 'r2';
-  if (keyName.startsWith('s3:')) return 's3';
-  if (keyName.startsWith('discord:')) return 'discord';
-  if (keyName.startsWith('hf:')) return 'huggingface';
-  if (keyName.startsWith('webdav:')) return 'webdav';
-  if (keyName.startsWith('github:')) return 'github';
-  return 'telegram';
+function normalizeSortBy(value) {
+  const validFields = {
+    'time': 'created_at',
+    'created_at': 'created_at',
+    'size': 'file_size',
+    'file_size': 'file_size',
+    'name': 'file_name',
+    'file_name': 'file_name'
+  };
+  return validFields[String(value || '').toLowerCase()] || 'created_at';
 }
 
-function inferFileType(name, metadata = {}) {
-  const sourceName = metadata.fileName || name || '';
-  const segments = String(sourceName).split('.');
-  const ext = segments.length > 1 ? segments.pop().toLowerCase() : '';
-  if (IMAGE_EXTS.has(ext)) return 'image';
-  if (VIDEO_EXTS.has(ext)) return 'video';
-  if (AUDIO_EXTS.has(ext)) return 'audio';
-  return 'document';
+function normalizeSortOrder(value) {
+  const order = String(value || '').toUpperCase();
+  return order === 'ASC' ? 'ASC' : 'DESC';
 }
 
-function isFolderMarker(key) {
-  if (!key?.name) return false;
-  if (String(key.name).startsWith('folder:')) return true;
-  return key.metadata?.folderMarker === true;
+function buildFileUrl(file, env) {
+  const baseUrl = env.PUBLIC_BASE_URL || '';
+  const prefix = baseUrl ? '' : '/file/';
+  return `${baseUrl}${prefix}${file.storage_key}`;
 }
 
-function shouldIncludeKey(key) {
-  if (!key?.name) return false;
-  if (INVALID_PREFIXES.some((item) => key.name.startsWith(item))) return false;
-  if (isFolderMarker(key)) return false;
-
-  const metadata = key.metadata || {};
-  return Boolean(metadata.fileName) && metadata.TimeStamp !== undefined && metadata.TimeStamp !== null;
-}
-
-function normalizeKey(key) {
-  const metadata = key.metadata || {};
-  const storageType = inferStorageType(key.name, metadata);
-  const fileType = inferFileType(key.name, metadata);
-  const folderPath = normalizeFolderPath(metadata.folderPath || metadata.path || '');
-
+function formatFileResponse(file, env) {
   return {
-    ...key,
-    metadata: {
-      ...metadata,
-      storageType,
-      fileType,
-      folderPath,
-    },
+    id: file.id,
+    name: file.storage_key,
+    src: buildFileUrl(file, env),
+    fileName: file.file_name,
+    size: file.file_size,
+    time: file.created_at,
+    type: file.mime_type,
+    storageType: file.storage_type,
+    folderId: file.folder_id,
+    folderPath: file.folder_path,
+    liked: Boolean(file.liked),
+    listType: file.list_type,
+    label: file.label,
+    extra: file.extra_json ? JSON.parse(file.extra_json) : {}
   };
 }
 
-function matchStorage(storageType, storageFilter) {
-  if (!storageFilter) return true;
-  if (storageFilter === 'kv' || storageFilter === 'telegram') return storageType === 'telegram';
-  return storageType === storageFilter;
-}
-
-function matchFolder(folderPath, folderFilter) {
-  if (!folderFilter) return true;
-  return normalizeFolderPath(folderPath) === folderFilter;
-}
-
-function compareByTimestampDesc(a, b) {
-  const left = Number(a?.metadata?.TimeStamp || 0);
-  const right = Number(b?.metadata?.TimeStamp || 0);
-  return right - left;
-}
-
-function compareByFileSizeAsc(a, b) {
-  const left = Number(a?.metadata?.fileSize || 0);
-  const right = Number(b?.metadata?.fileSize || 0);
-  if (left !== right) return left - right;
-  const leftTs = Number(a?.metadata?.TimeStamp || 0);
-  const rightTs = Number(b?.metadata?.TimeStamp || 0);
-  return rightTs - leftTs;
-}
-
-function computeStats(files) {
-  const stats = {
-    total: 0,
-    byType: { image: 0, video: 0, audio: 0, document: 0 },
-    byStorage: {
-      telegram: 0,
-      r2: 0,
-      s3: 0,
-      discord: 0,
-      huggingface: 0,
-      webdav: 0,
-      github: 0,
-    },
-  };
-
-  for (const file of files) {
-    const fileType = file.metadata?.fileType || 'document';
-    const storageType = file.metadata?.storageType || 'telegram';
-
-    stats.total += 1;
-    if (Object.prototype.hasOwnProperty.call(stats.byType, fileType)) {
-      stats.byType[fileType] += 1;
-    } else {
-      stats.byType.document += 1;
-    }
-
-    if (Object.prototype.hasOwnProperty.call(stats.byStorage, storageType)) {
-      stats.byStorage[storageType] += 1;
-    }
-  }
-
-  return stats;
-}
-
-function collectFolderPaths(files, folderMarkers = []) {
-  const paths = new Set();
-
-  for (const marker of folderMarkers) {
-    const metadataPath = normalizeFolderPath(marker?.metadata?.folderPath || marker?.metadata?.path || '');
-    const keyPath = String(marker?.name || '').startsWith('folder:')
-      ? normalizeFolderPath(String(marker.name).slice('folder:'.length))
-      : '';
-    const path = metadataPath || keyPath;
-    if (path) {
-      paths.add(path);
-      includeParentPaths(path, paths);
-    }
-  }
-
-  for (const file of files) {
-    const path = normalizeFolderPath(file?.metadata?.folderPath || '');
-    if (!path) continue;
-    paths.add(path);
-    includeParentPaths(path, paths);
-  }
-
-  return paths;
-}
-
-function includeParentPaths(pathValue, targetSet) {
-  const parts = normalizeFolderPath(pathValue).split('/').filter(Boolean);
-  for (let i = 1; i < parts.length; i += 1) {
-    targetSet.add(parts.slice(0, i).join('/'));
-  }
-}
-
-function buildFolderNodes(files, folderMarkers = []) {
-  const fileCountByFolder = new Map();
-  for (const file of files) {
-    const folderPath = normalizeFolderPath(file?.metadata?.folderPath || '');
-    if (!folderPath) continue;
-    fileCountByFolder.set(folderPath, (fileCountByFolder.get(folderPath) || 0) + 1);
-  }
-
-  const folderPaths = [...collectFolderPaths(files, folderMarkers)].sort((a, b) => {
-    const depthA = a.split('/').length;
-    const depthB = b.split('/').length;
-    if (depthA !== depthB) return depthA - depthB;
-    return a.localeCompare(b, 'en', { sensitivity: 'base' });
-  });
-
-  return folderPaths.map((pathValue) => {
-    const parts = pathValue.split('/');
-    const name = parts[parts.length - 1] || pathValue;
-    const parentPath = parts.length > 1 ? parts.slice(0, -1).join('/') : '';
-    return {
-      path: pathValue,
-      name,
-      parentPath,
-      depth: parts.length,
-      fileCount: fileCountByFolder.get(pathValue) || 0,
-    };
-  });
-}
-
-async function listAllKeys(env, prefix = '') {
-  const allKeys = [];
-  let cursor = undefined;
-  let guard = 0;
-
-  do {
-    const page = await env.img_url.list({ limit: 1000, cursor, prefix: prefix || undefined });
-    allKeys.push(...(page.keys || []));
-    cursor = page.list_complete ? undefined : page.cursor;
-    guard += 1;
-  } while (cursor && guard < 10000);
-
-  return allKeys;
-}
-
-export async function onRequest(context) {
+export async function onRequestGet(context) {
   const { request, env } = context;
   const url = new URL(request.url);
 
-  if (!env.img_url) {
-    return new Response(JSON.stringify({ error: 'KV binding img_url is not configured.' }), {
+  try {
+    const fileRepo = new FileRepository(env.DB);
+
+    const page = parsePositiveInt(url.searchParams.get('page'), 1, 1, 10000);
+    const pageSize = parsePositiveInt(url.searchParams.get('pageSize'), 20, 1, 200);
+    const storageType = url.searchParams.get('storage') || url.searchParams.get('storageType');
+    const folderId = url.searchParams.get('folderId') || url.searchParams.get('folder');
+    const folderPath = url.searchParams.get('folderPath');
+    const liked = url.searchParams.get('liked');
+    const listType = url.searchParams.get('listType');
+    const sortBy = normalizeSortBy(url.searchParams.get('sort') || url.searchParams.get('sortBy'));
+    const sortOrder = normalizeSortOrder(url.searchParams.get('order') || url.searchParams.get('sortOrder'));
+    const search = url.searchParams.get('search') || url.searchParams.get('q');
+
+    let result;
+
+    if (search) {
+      result = await fileRepo.search(search, { page, pageSize });
+    } else {
+      const options = {
+        page,
+        pageSize,
+        sortBy,
+        sortOrder
+      };
+
+      if (folderId) {
+        options.folderId = folderId;
+      } else if (folderPath) {
+        const folder = await env.DB.prepare(
+          'SELECT id FROM folders WHERE path = ?'
+        ).bind(folderPath).first();
+        
+        if (folder) {
+          options.folderId = folder.id;
+        }
+      }
+
+      if (storageType) {
+        options.storageType = storageType;
+      }
+
+      if (listType) {
+        options.listType = listType;
+      }
+
+      if (liked !== null && liked !== undefined) {
+        options.liked = liked === 'true' || liked === '1';
+      }
+
+      result = await fileRepo.list(options);
+    }
+
+    const files = result.items.map(file => formatFileResponse(file, env));
+
+    return new Response(JSON.stringify({
+      success: true,
+      result: files,
+      total: result.total,
+      page: result.page,
+      pageSize: result.pageSize,
+      totalPages: result.totalPages
+    }), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+
+  } catch (error) {
+    console.error('List files error:', error);
+    return new Response(JSON.stringify({
+      success: false,
+      error: error.message,
+      errorCode: 'LIST_ERROR'
+    }), {
       status: 500,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' }
     });
   }
-
-  const rawLimit = url.searchParams.get('limit');
-  let limit = parseInt(rawLimit || '100', 10);
-  if (!Number.isFinite(limit) || limit <= 0) limit = 100;
-  if (limit > 1000) limit = 1000;
-
-  const offset = Math.max(0, parseInt(url.searchParams.get('cursor') || '0', 10) || 0);
-  const prefix = url.searchParams.get('prefix') || '';
-  const storageFilter = String(url.searchParams.get('storage') || '').toLowerCase();
-  const folderFilter = normalizeFolderPath(url.searchParams.get('folderPath') || url.searchParams.get('folder') || '');
-  const sort = String(url.searchParams.get('sort') || '').toLowerCase();
-  const includeStats = ['1', 'true', 'yes'].includes(
-    String(url.searchParams.get('includeStats') || url.searchParams.get('stats') || '').toLowerCase()
-  );
-  const includeFolders = ['1', 'true', 'yes'].includes(
-    String(url.searchParams.get('includeFolders') || '').toLowerCase()
-  );
-
-  const allKeys = await listAllKeys(env, prefix);
-  const folderMarkers = allKeys.filter(isFolderMarker);
-
-  const normalizedFiles = allKeys
-    .filter(shouldIncludeKey)
-    .map(normalizeKey)
-    .filter((item) => matchStorage(item.metadata?.storageType, storageFilter));
-
-  const sorter = (sort === 'sizeasc' || sort === 'smallfirst')
-    ? compareByFileSizeAsc
-    : compareByTimestampDesc;
-
-  const filtered = normalizedFiles
-    .filter((item) => matchFolder(item.metadata?.folderPath || '', folderFilter))
-    .sort(sorter);
-
-  const page = filtered.slice(offset, offset + limit);
-  const nextOffset = offset + limit < filtered.length ? offset + limit : null;
-
-  const payload = {
-    keys: page,
-    pageCount: page.length,
-    cursor: nextOffset == null ? null : String(nextOffset),
-    list_complete: nextOffset == null,
-  };
-
-  if (includeStats) {
-    payload.stats = computeStats(filtered);
-  }
-
-  if (includeFolders) {
-    payload.folders = buildFolderNodes(normalizedFiles, folderMarkers);
-  }
-
-  return new Response(JSON.stringify(payload), {
-    headers: { 'Content-Type': 'application/json' },
-  });
 }
