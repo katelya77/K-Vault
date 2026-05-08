@@ -152,7 +152,81 @@
 
 **重新部署** - 修改环境变量后需重新部署生效
 
-### 第三步：Docker 自托管部署（可选）
+### 第三步：创建 D1 数据库（Cloudflare Pages）
+
+v2.0 使用 D1 数据库替代 KV 存储，需要先创建并绑定数据库：
+
+1. **创建 D1 数据库**
+   ```bash
+   npx wrangler d1 create kvault-db
+   ```
+
+2. **记录数据库 ID**
+   命令会返回 `database_id`，例如：
+   ```
+   database_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+   ```
+
+3. **绑定数据库到 Pages 项目**
+   - 进入 Cloudflare Dashboard → Workers 和 Pages → 你的项目
+   - 设置 → 函数 → D1 数据库绑定
+   - 添加绑定：
+     - 变量名称：`DB`
+     - D1 数据库：选择刚创建的数据库
+
+4. **初始化数据库表结构**
+   ```bash
+   # 下载 schema 文件
+   curl -o schema-d1.sql https://raw.githubusercontent.com/katelya77/K-Vault/main/server/db/schema-d1.sql
+   
+   # 执行数据库迁移
+   npx wrangler d1 execute kvault-db --file=./schema-d1.sql
+   ```
+
+### 第四步：数据迁移（可选）
+
+如果你从 v1.0 升级到 v2.0，需要将 KV 数据迁移到 D1 数据库。
+
+#### 自动迁移（推荐）
+
+1. **访问管理后台**
+   - 打开 `https://你的域名/admin.html`
+   - 使用 `BASIC_USER` 和 `BASIC_PASS` 登录
+
+2. **打开迁移工具**
+   - 点击页面右上角的工具箱图标
+   - 选择"数据库迁移"
+
+3. **查看迁移状态**
+   - 系统会自动检测是否需要迁移
+   - 显示当前数据库统计信息
+
+4. **执行迁移**
+   - 点击"开始迁移"按钮
+   - 等待迁移完成
+   - 查看迁移结果报告
+
+#### 手动迁移（高级）
+
+也可以使用 API 进行迁移：
+
+```bash
+# 查看迁移状态
+curl -X GET https://你的域名/api/admin/migrate \
+  -u admin:password
+
+# 执行迁移
+curl -X POST https://你的域名/api/admin/migrate \
+  -u admin:password \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+**详细迁移说明**：
+- [Cloudflare Pages 迁移指南](docs/migration-cloudflare.md)
+- [Docker 迁移指南](docs/migration-docker.md)
+
+### 第五步：Docker 自托管部署（可选）
 
 如果你希望在自己的 VPS/NAS 上运行（不依赖 Cloudflare Pages 运行时）：
 

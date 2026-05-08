@@ -809,6 +809,186 @@
         width: 100%;
       }
     }
+
+    .migrate-dialog .migrate-content {
+      padding: 20px 0;
+    }
+
+    .migrate-loading {
+      text-align: center;
+      padding: 40px 0;
+      font-size: 16px;
+      color: #909399;
+    }
+
+    .migrate-loading i {
+      margin-right: 10px;
+    }
+
+    .migrate-status-header {
+      display: flex;
+      align-items: center;
+      margin-bottom: 20px;
+      padding-bottom: 15px;
+      border-bottom: 1px solid #EBEEF5;
+    }
+
+    .migrate-status-header i {
+      font-size: 24px;
+      color: #409EFF;
+      margin-right: 10px;
+    }
+
+    .migrate-status-header h3 {
+      margin: 0;
+      font-size: 18px;
+      color: #303133;
+    }
+
+    .migrate-stats-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+
+    .migrate-stat-item {
+      display: flex;
+      align-items: center;
+      padding: 15px;
+      background: #F5F7FA;
+      border-radius: 8px;
+    }
+
+    .migrate-stat-item i {
+      font-size: 24px;
+      color: #409EFF;
+      margin-right: 15px;
+    }
+
+    .migrate-stat-info {
+      flex: 1;
+    }
+
+    .migrate-stat-label {
+      font-size: 12px;
+      color: #909399;
+      margin-bottom: 5px;
+    }
+
+    .migrate-stat-value {
+      font-size: 20px;
+      font-weight: bold;
+      color: #303133;
+    }
+
+    .migrate-notice {
+      display: flex;
+      align-items: flex-start;
+      padding: 15px;
+      background: #ECF5FF;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+
+    .migrate-notice i {
+      color: #409EFF;
+      margin-right: 10px;
+      margin-top: 2px;
+    }
+
+    .migrate-notice strong {
+      display: block;
+      margin-bottom: 5px;
+      color: #303133;
+    }
+
+    .migrate-options {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 15px;
+    }
+
+    .migrate-options .el-checkbox {
+      margin-right: 0;
+    }
+
+    .migrate-result-header {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 20px;
+      padding: 20px;
+      border-radius: 8px;
+    }
+
+    .migrate-result-header i {
+      font-size: 32px;
+      margin-right: 15px;
+    }
+
+    .migrate-result-header h3 {
+      margin: 0;
+      font-size: 20px;
+    }
+
+    .migrate-result .migrate-result-header {
+      background: #F0F9FF;
+    }
+
+    .migrate-result .migrate-result-header i {
+      color: #67C23A;
+    }
+
+    .migrate-result .migrate-result-header h3 {
+      color: #67C23A;
+    }
+
+    .migrate-error .migrate-result-header {
+      background: #FEF0F0;
+    }
+
+    .migrate-error .migrate-result-header i {
+      color: #F56C6C;
+    }
+
+    .migrate-error .migrate-result-header h3 {
+      color: #F56C6C;
+    }
+
+    .migrate-result-details {
+      padding: 0 10px;
+    }
+
+    .migrate-result-item {
+      display: flex;
+      align-items: center;
+      padding: 12px;
+      margin-bottom: 10px;
+      background: #F5F7FA;
+      border-radius: 8px;
+    }
+
+    .migrate-result-item i {
+      font-size: 18px;
+      color: #409EFF;
+      margin-right: 15px;
+    }
+
+    .migrate-result-item span {
+      color: #606266;
+    }
+
+    .migrate-error {
+      text-align: center;
+      padding: 20px;
+    }
+
+    .migrate-error i {
+      font-size: 24px;
+      color: #F56C6C;
+      margin-right: 10px;
+    }
   </style>
   <link rel="stylesheet" href="/mobile-refactor.css">
 </head>
@@ -908,7 +1088,8 @@
                 <el-dropdown-item command="openUploader"><i class="fas fa-cloud-upload-alt"></i> 打开上传中心</el-dropdown-item>
                 <el-dropdown-item command="exportLinks"><i class="fas fa-file-export"></i> 导出全部链接</el-dropdown-item>
                 <el-dropdown-item command="manageApiTokens"><i class="fas fa-key"></i> API Token 管理</el-dropdown-item>
-                <el-dropdown-item command="checkStatus" divided><i class="fas fa-heartbeat"></i> 检查连接状态</el-dropdown-item>
+                <el-dropdown-item command="migrateDatabase" divided><i class="fas fa-database"></i> 数据库迁移</el-dropdown-item>
+                <el-dropdown-item command="checkStatus"><i class="fas fa-heartbeat"></i> 检查连接状态</el-dropdown-item>
               </el-dropdown-menu>
             </el-dropdown>
             <div class="status-panel" @click="checkConnectionStatus">
@@ -1394,6 +1575,124 @@
       </div>
     </el-dialog>
 
+    <el-dialog
+      title="数据库迁移"
+      :visible.sync="migrateDialogVisible"
+      width="700px"
+      append-to-body
+      custom-class="migrate-dialog">
+      <div class="migrate-content">
+        <div v-if="!migrateStats && !migrateResult" class="migrate-loading">
+          <i class="fas fa-spinner fa-spin"></i> 正在检查数据库状态...
+        </div>
+        
+        <div v-if="migrateStats && !migrateResult" class="migrate-status">
+          <div class="migrate-status-header">
+            <i class="fas fa-database"></i>
+            <h3>数据库状态</h3>
+          </div>
+          
+          <div class="migrate-stats-grid">
+            <div class="migrate-stat-item">
+              <i class="fas fa-file"></i>
+              <div class="migrate-stat-info">
+                <div class="migrate-stat-label">文件数量</div>
+                <div class="migrate-stat-value">{{ migrateStats.files }}</div>
+              </div>
+            </div>
+            <div class="migrate-stat-item">
+              <i class="fas fa-folder"></i>
+              <div class="migrate-stat-info">
+                <div class="migrate-stat-label">文件夹数量</div>
+                <div class="migrate-stat-value">{{ migrateStats.folders }}</div>
+              </div>
+            </div>
+            <div class="migrate-stat-item">
+              <i class="fas fa-share-alt"></i>
+              <div class="migrate-stat-info">
+                <div class="migrate-stat-label">分享链接</div>
+                <div class="migrate-stat-value">{{ migrateStats.shares }}</div>
+              </div>
+            </div>
+            <div class="migrate-stat-item">
+              <i class="fas fa-key"></i>
+              <div class="migrate-stat-info">
+                <div class="migrate-stat-label">API Token</div>
+                <div class="migrate-stat-value">{{ migrateStats.tokens }}</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="migrate-notice">
+            <i class="fas fa-info-circle"></i>
+            <div v-if="migrateNeedMigration">
+              <strong>检测到需要迁移</strong>：数据库中暂无数据，建议从 KV 迁移旧数据。
+            </div>
+            <div v-else>
+              <strong>数据库已有数据</strong>：您仍可选择重新迁移，这将跳过已存在的记录。
+            </div>
+          </div>
+
+          <div class="migrate-options">
+            <el-checkbox v-model="migrateFiles">迁移文件元数据</el-checkbox>
+            <el-checkbox v-model="migrateShares">迁移分享链接</el-checkbox>
+            <el-checkbox v-model="migrateTokens">迁移 API Token</el-checkbox>
+            <el-checkbox v-model="migrateStorageConfigs">迁移存储配置</el-checkbox>
+          </div>
+        </div>
+
+        <div v-if="migrateResult" class="migrate-result">
+          <div class="migrate-result-header">
+            <i :class="migrateResult.success ? 'fas fa-check-circle' : 'fas fa-times-circle'"></i>
+            <h3>{{ migrateResult.success ? '迁移成功' : '迁移失败' }}</h3>
+          </div>
+
+          <div v-if="migrateResult.success" class="migrate-result-details">
+            <div v-if="migrateResult.results.files" class="migrate-result-item">
+              <i class="fas fa-file"></i>
+              <span>文件：成功 {{ migrateResult.results.files.totalMigrated }} 个，跳过 {{ migrateResult.results.files.totalSkipped }} 个</span>
+            </div>
+            <div v-if="migrateResult.results.shares" class="migrate-result-item">
+              <i class="fas fa-share-alt"></i>
+              <span>分享链接：成功 {{ migrateResult.results.shares.totalMigrated }} 个，跳过 {{ migrateResult.results.shares.totalSkipped }} 个</span>
+            </div>
+            <div v-if="migrateResult.results.tokens" class="migrate-result-item">
+              <i class="fas fa-key"></i>
+              <span>API Token：成功 {{ migrateResult.results.tokens.totalMigrated }} 个</span>
+            </div>
+            <div v-if="migrateResult.results.storageConfigs" class="migrate-result-item">
+              <i class="fas fa-cog"></i>
+              <span>存储配置：成功 {{ migrateResult.results.storageConfigs.totalMigrated }} 个</span>
+            </div>
+          </div>
+
+          <div v-else class="migrate-error">
+            <i class="fas fa-exclamation-triangle"></i>
+            <span>{{ migrateResult.error }}</span>
+          </div>
+        </div>
+      </div>
+      
+      <span slot="footer" class="dialog-footer">
+        <el-button size="small" @click="migrateDialogVisible = false">关闭</el-button>
+        <el-button 
+          v-if="migrateStats && !migrateResult"
+          size="small" 
+          type="primary" 
+          :loading="migrateLoading" 
+          @click="executeMigration">
+          开始迁移
+        </el-button>
+        <el-button 
+          v-if="migrateResult"
+          size="small" 
+          type="primary" 
+          @click="resetMigrationDialog">
+          重新检查
+        </el-button>
+      </span>
+    </el-dialog>
+
     <!-- 预览弹窗 - 模态框模式（不跳转新标签页） -->
     <div class="preview-modal" v-if="previewData" @click="closePreview">
       <button class="preview-close" @click.stop="closePreview">
@@ -1561,6 +1860,15 @@
         expiryPreset: 'never',
         customExpiresAt: '',
       },
+      migrateDialogVisible: false,
+      migrateLoading: false,
+      migrateStats: null,
+      migrateResult: null,
+      migrateNeedMigration: true,
+      migrateFiles: true,
+      migrateShares: true,
+      migrateTokens: true,
+      migrateStorageConfigs: true,
     },
     computed: {
       filteredTableData() {
@@ -3441,6 +3749,7 @@
           case 'openUploader': this.openUploader(); break;
           case 'exportLinks': this.exportAllLinks(); break;
           case 'manageApiTokens': this.openApiTokenDialog(); break;
+          case 'migrateDatabase': this.openMigrateDialog(); break;
           case 'checkStatus': this.checkConnectionStatus(); break;
         }
       },
@@ -3511,6 +3820,80 @@
           loading.close();
           this.$message.error('检查状态失败: ' + error.message);
         }
+      },
+      async openMigrateDialog() {
+        this.migrateDialogVisible = true;
+        this.migrateStats = null;
+        this.migrateResult = null;
+        this.migrateLoading = true;
+
+        try {
+          const response = await fetch('./api/admin/migrate', {
+            credentials: 'include'
+          });
+          const data = await response.json();
+
+          if (data.success) {
+            this.migrateStats = data.stats;
+            this.migrateNeedMigration = (
+              data.stats.files === 0 &&
+              data.stats.folders === 0 &&
+              data.stats.shares === 0 &&
+              data.stats.tokens === 0
+            );
+          } else {
+            this.$message.error('获取数据库状态失败: ' + data.error);
+            this.migrateDialogVisible = false;
+          }
+        } catch (error) {
+          this.$message.error('检查数据库状态失败: ' + error.message);
+          this.migrateDialogVisible = false;
+        } finally {
+          this.migrateLoading = false;
+        }
+      },
+      async executeMigration() {
+        this.migrateLoading = true;
+
+        try {
+          const response = await fetch('./api/admin/migrate', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            credentials: 'include',
+            body: JSON.stringify({
+              migrateFiles: this.migrateFiles,
+              migrateShares: this.migrateShares,
+              migrateTokens: this.migrateTokens,
+              migrateStorageConfigs: this.migrateStorageConfigs
+            })
+          });
+
+          const data = await response.json();
+
+          if (data.success) {
+            this.migrateResult = data;
+            this.$message.success('数据迁移成功！');
+            this.loadFiles();
+          } else {
+            this.migrateResult = data;
+            this.$message.error('数据迁移失败: ' + data.error);
+          }
+        } catch (error) {
+          this.$message.error('执行迁移失败: ' + error.message);
+          this.migrateResult = {
+            success: false,
+            error: error.message
+          };
+        } finally {
+          this.migrateLoading = false;
+        }
+      },
+      resetMigrationDialog() {
+        this.migrateStats = null;
+        this.migrateResult = null;
+        this.openMigrateDialog();
       },
       openUploader() {  // 打开上传中心
         window.open('./', '_blank');
