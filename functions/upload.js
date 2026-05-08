@@ -62,6 +62,7 @@ async function saveFileMetadata(env, fileData) {
       storageKey: fileData.storageKey || id,
       storageFileId: fileData.storageFileId || null,
       fileName: fileData.fileName,
+      physicalFileName: fileData.physicalFileName || null,
       fileSize: fileData.fileSize,
       mimeType: fileData.mimeType || 'application/octet-stream',
       folderId,
