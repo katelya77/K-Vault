@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 
@@ -8,7 +8,6 @@ const route = useRoute()
 const authStore = useAuthStore()
 
 const username = computed(() => authStore.username || 'User')
-const userMenuOpen = ref(false)
 
 const pageTitle = computed(() => {
   const title = route.meta?.title as string
@@ -27,236 +26,96 @@ function handleLogout() {
 </script>
 
 <template>
-  <div class="app-shell">
-    <aside class="sidebar">
-      <div class="sidebar-header">
-        <h2>K-Vault</h2>
-      </div>
-      <nav class="sidebar-nav">
-        <router-link
-          v-for="item in sidebarItems"
-          :key="item.path"
-          :to="item.path"
-          class="nav-item"
-        >
-          <span class="nav-icon">{{ item.icon }}</span>
-          <span class="nav-label">{{ item.label }}</span>
-        </router-link>
-      </nav>
-    </aside>
-
-    <div class="main-container">
-      <header class="top-nav">
-        <div class="nav-title">{{ pageTitle }}</div>
-        <div 
-          class="user-menu"
-          @mouseenter="userMenuOpen = true"
-          @mouseleave="userMenuOpen = false"
-        >
-          <div class="user-info">
-            <span class="username">{{ username }}</span>
-            <span class="dropdown-icon">▼</span>
-          </div>
-          <Transition name="dropdown">
-            <div v-if="userMenuOpen" class="user-dropdown">
-              <button @click="handleLogout">退出登录</button>
-            </div>
-          </Transition>
+  <div class="drawer lg:drawer-open">
+    <input id="my-drawer" type="checkbox" class="drawer-toggle" />
+    
+    <div class="drawer-content flex flex-col">
+      <div class="navbar bg-base-100 shadow-md border-b border-base-300">
+        <div class="flex-none lg:hidden">
+          <label for="my-drawer" class="btn btn-square btn-ghost">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="inline-block w-6 h-6 stroke-current">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+            </svg>
+          </label>
         </div>
-      </header>
-
-      <main class="content">
+        
+        <div class="flex-1">
+          <span class="text-xl font-semibold">{{ pageTitle }}</span>
+        </div>
+        
+        <div class="flex-none">
+          <div class="dropdown dropdown-end dropdown-hover user-menu">
+            <div tabindex="0" role="button" class="btn btn-ghost gap-2">
+              <span>{{ username }}</span>
+              <svg 
+                class="w-4 h-4 arrow-icon"
+                xmlns="http://www.w3.org/2000/svg" 
+                fill="none" 
+                viewBox="0 0 24 24" 
+                stroke="currentColor"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+            <ul 
+              tabindex="0" 
+              class="dropdown-content z-[1] menu p-2 shadow-lg bg-base-100 rounded-box w-52 border border-base-300 dropdown-menu"
+            >
+              <li><a @click="handleLogout">退出登录</a></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      
+      <div class="flex-1 overflow-y-auto p-6">
         <router-view />
-      </main>
+      </div>
+    </div>
+    
+    <div class="drawer-side">
+      <label for="my-drawer" class="drawer-overlay"></label>
+      <aside class="bg-base-300 w-64 min-h-screen">
+        <div class="p-4 border-b border-base-content/10">
+          <h2 class="text-xl font-bold">K-Vault</h2>
+        </div>
+        <ul class="menu p-4">
+          <li v-for="item in sidebarItems" :key="item.path">
+            <router-link 
+              :to="item.path"
+              class="gap-3"
+              :class="{ 'active': route.path === item.path }"
+            >
+              <span class="text-xl">{{ item.icon }}</span>
+              <span>{{ item.label }}</span>
+            </router-link>
+          </li>
+        </ul>
+      </aside>
     </div>
   </div>
 </template>
 
 <style scoped>
-.app-shell {
-  display: flex;
-  height: 100vh;
-  overflow: hidden;
-}
-
-.sidebar {
-  width: 200px;
-  background: #1a1a2e;
-  color: white;
-  display: flex;
-  flex-direction: column;
-  border-right: 1px solid #2d2d44;
-}
-
-.sidebar-header {
-  padding: 1.5rem;
-  border-bottom: 1px solid #2d2d44;
-}
-
-.sidebar-header h2 {
-  margin: 0;
-  font-size: 1.5rem;
-  font-weight: 600;
-}
-
-.sidebar-nav {
-  flex: 1;
-  padding: 1rem 0;
-}
-
-.nav-item {
-  display: flex;
-  align-items: center;
-  padding: 0.75rem 1.5rem;
-  color: #a0a0a0;
-  text-decoration: none;
-  transition: all 0.2s;
-}
-
-.nav-item:hover {
-  background: #2d2d44;
-  color: white;
-}
-
-.nav-item.router-link-active {
-  background: #4a90e2;
-  color: white;
-}
-
-.nav-icon {
-  margin-right: 0.75rem;
-  font-size: 1.2rem;
-}
-
-.nav-label {
-  font-size: 0.95rem;
-}
-
-.main-container {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.top-nav {
-  height: 60px;
-  background: white;
-  border-bottom: 1px solid #e0e0e0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 2rem;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
-}
-
-.nav-title {
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: #1a1a2e;
-}
-
-.user-menu {
-  position: relative;
-}
-
-.user-info {
-  display: flex;
-  align-items: center;
-  cursor: pointer;
-  padding: 0.5rem 1rem;
-  border-radius: 4px;
-  transition: background 0.2s;
-}
-
-.user-info:hover {
-  background: #f5f5f5;
-}
-
-.username {
-  margin-right: 0.5rem;
-  font-weight: 500;
-}
-
-.dropdown-icon {
-  font-size: 0.75rem;
-  color: #666;
-  transition: transform 0.2s ease;
-}
-
-.user-menu:hover .dropdown-icon {
+.user-menu:hover .arrow-icon {
   transform: rotate(180deg);
 }
 
-.user-dropdown {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  background: white;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  min-width: 160px;
-  z-index: 1001;
-  padding: 0.5rem 0;
+.arrow-icon {
+  transition: transform 0.2s ease;
 }
 
-.user-dropdown::before {
-  content: '';
-  position: absolute;
-  top: -14px;
-  left: 0;
-  right: 0;
-  height: 14px;
-  background: transparent;
+.dropdown-menu {
+  animation: dropdown-slide 0.2s ease;
 }
 
-.user-dropdown::after {
-  content: '';
-  position: absolute;
-  top: -6px;
-  right: 20px;
-  width: 12px;
-  height: 12px;
-  background: white;
-  border: 1px solid #e0e0e0;
-  border-right: none;
-  border-bottom: none;
-  transform: rotate(45deg);
-  z-index: -1;
-}
-
-.user-dropdown button {
-  width: 100%;
-  padding: 0.75rem 1rem;
-  border: none;
-  background: none;
-  text-align: left;
-  cursor: pointer;
-  transition: background 0.2s;
-  color: #1a1a2e;
-  font-size: 0.95rem;
-}
-
-.user-dropdown button:hover {
-  background: #f5f5f5;
-}
-
-/* 下拉菜单动画 */
-.dropdown-enter-active,
-.dropdown-leave-active {
-  transition: all 0.2s ease;
-}
-
-.dropdown-enter-from,
-.dropdown-leave-to {
-  opacity: 0;
-  transform: translateY(-10px);
-}
-
-.content {
-  flex: 1;
-  overflow-y: auto;
-  background: #f8f9fa;
+@keyframes dropdown-slide {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 </style>

@@ -96,7 +96,7 @@ async function loadFolders(parentId?: string | null) {
   }
 }
 
-async function navigateToFolder(folder?: FolderItem) {
+async function navigateToFolder(folder?: FolderItem | null) {
   currentFolder.value = folder || null
   await Promise.all([
     loadFiles(folder?.id),
@@ -140,212 +140,85 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="files-view">
-    <div class="header">
-      <h1>文件列表</h1>
-      <div class="breadcrumb">
-        <span
-          v-for="(item, index) in breadcrumb"
-          :key="item.path"
-          class="breadcrumb-item"
-          :class="{ clickable: index < breadcrumb.length - 1 }"
-          @click="index < breadcrumb.length - 1 && navigateToFolder(item.path ? folders.find(f => f.path === item.path) : null)"
-        >
-          {{ item.name }}
-          <span v-if="index < breadcrumb.length - 1" class="separator">/</span>
-        </span>
+  <div class="space-y-4">
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-3xl font-bold">文件列表</h1>
+        <div class="text-sm breadcrumbs mt-2">
+          <ul>
+            <li v-for="(item, index) in breadcrumb" :key="item.path">
+              <a 
+                v-if="index < breadcrumb.length - 1"
+                @click="navigateToFolder(item.path ? folders.find(f => f.path === item.path) : null)"
+                class="cursor-pointer hover:text-primary"
+              >
+                {{ item.name }}
+              </a>
+              <span v-else class="opacity-60">{{ item.name }}</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+      <div v-if="!loading && !error" class="text-sm opacity-60">
+        共 {{ pagination.total }} 个文件
       </div>
     </div>
 
-    <div class="toolbar">
-      <div class="stats">
-        <span v-if="!loading && !error">
-          共 {{ pagination.total }} 个文件
-        </span>
-      </div>
+    <div v-if="loading" class="flex justify-center items-center h-64">
+      <span class="loading loading-spinner loading-lg"></span>
     </div>
 
-    <div class="content">
-      <div v-if="loading" class="loading">
-        <p>加载中...</p>
-      </div>
+    <div v-else-if="error" class="alert alert-error">
+      <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+      <span>加载失败，请重试</span>
+    </div>
 
-      <div v-else-if="error" class="error">
-        <p>加载失败，请重试</p>
-      </div>
-
-      <div v-else class="file-grid">
-        <div
-          v-for="folder in folders"
-          :key="folder.id"
-          class="file-item folder"
-          @click="navigateToFolder(folder)"
-        >
-          <div class="icon">📁</div>
-          <div class="info">
-            <div class="name">{{ folder.name }}</div>
-            <div class="meta">{{ folder.fileCount }} 个文件</div>
+    <div v-else class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+      <div
+        v-for="folder in folders"
+        :key="folder.id"
+        class="card bg-base-100 shadow-md hover:shadow-xl transition-shadow cursor-pointer border-l-4 border-primary"
+        @click="navigateToFolder(folder)"
+      >
+        <div class="card-body p-4">
+          <div class="text-4xl text-center mb-2">📁</div>
+          <div class="text-center">
+            <div class="font-medium truncate">{{ folder.name }}</div>
+            <div class="text-xs opacity-60">{{ folder.fileCount }} 个文件</div>
           </div>
         </div>
+      </div>
 
-        <div
-          v-for="file in files"
-          :key="file.id"
-          class="file-item"
-        >
-          <div class="icon">{{ getFileIcon(file.type) }}</div>
-          <div class="info">
-            <div class="name">{{ file.name }}</div>
-            <div class="meta">
+      <div
+        v-for="file in files"
+        :key="file.id"
+        class="card bg-base-100 shadow-md hover:shadow-xl transition-shadow cursor-pointer"
+      >
+        <div class="card-body p-4">
+          <div class="text-4xl text-center mb-2">{{ getFileIcon(file.type) }}</div>
+          <div>
+            <div class="font-medium truncate">{{ file.name }}</div>
+            <div class="text-xs opacity-60 flex items-center gap-1">
               <span>{{ formatSize(file.size) }}</span>
-              <span class="dot">·</span>
+              <span>·</span>
               <span>{{ formatDate(file.uploadedAt) }}</span>
             </div>
           </div>
         </div>
+      </div>
 
-        <div v-if="folders.length === 0 && files.length === 0" class="empty">
-          <p>暂无文件</p>
+      <div v-if="folders.length === 0 && files.length === 0" class="col-span-full">
+        <div class="hero min-h-64 bg-base-200 rounded-lg">
+          <div class="hero-content text-center">
+            <div class="max-w-md">
+              <div class="text-6xl mb-4">📂</div>
+              <p class="text-lg opacity-60">暂无文件</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>
   </div>
 </template>
-
-<style scoped>
-.files-view {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  background: #f8f9fa;
-}
-
-.header {
-  padding: 1.5rem 2rem;
-  background: white;
-  border-bottom: 1px solid #e0e0e0;
-}
-
-.header h1 {
-  margin: 0 0 0.5rem 0;
-  font-size: 1.5rem;
-  font-weight: 600;
-  color: #1a1a2e;
-}
-
-.breadcrumb {
-  display: flex;
-  align-items: center;
-  font-size: 0.875rem;
-  color: #666;
-}
-
-.breadcrumb-item {
-  display: flex;
-  align-items: center;
-}
-
-.breadcrumb-item.clickable {
-  cursor: pointer;
-  color: #4a90e2;
-}
-
-.breadcrumb-item.clickable:hover {
-  text-decoration: underline;
-}
-
-.separator {
-  margin: 0 0.5rem;
-  color: #999;
-}
-
-.toolbar {
-  padding: 1rem 2rem;
-  background: white;
-  border-bottom: 1px solid #e0e0e0;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.stats {
-  font-size: 0.875rem;
-  color: #666;
-}
-
-.content {
-  flex: 1;
-  overflow-y: auto;
-  padding: 1.5rem 2rem;
-}
-
-.loading,
-.error,
-.empty {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  height: 200px;
-  color: #999;
-}
-
-.error {
-  color: #e74c3c;
-}
-
-.file-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 1rem;
-}
-
-.file-item {
-  background: white;
-  border-radius: 8px;
-  padding: 1rem;
-  cursor: pointer;
-  transition: all 0.2s;
-  border: 1px solid #e0e0e0;
-}
-
-.file-item:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  transform: translateY(-2px);
-}
-
-.file-item.folder {
-  border-left: 3px solid #4a90e2;
-}
-
-.icon {
-  font-size: 2.5rem;
-  margin-bottom: 0.75rem;
-  text-align: center;
-}
-
-.info {
-  min-width: 0;
-}
-
-.name {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: #1a1a2e;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  margin-bottom: 0.25rem;
-}
-
-.meta {
-  font-size: 0.75rem;
-  color: #999;
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-}
-
-.dot {
-  color: #ccc;
-}
-</style>

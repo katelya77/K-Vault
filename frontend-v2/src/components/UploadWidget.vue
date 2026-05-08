@@ -37,221 +37,63 @@ function triggerFileUpload() {
 </script>
 
 <template>
-  <div class="upload-widget">
-    <div v-if="!isExpanded" class="upload-button" @click="toggleExpand">
-      <img src="/icons/upload.svg" alt="Upload" class="upload-icon" />
-    </div>
+  <div class="fixed bottom-8 right-8 z-50">
+    <button
+      v-if="!isExpanded"
+      class="btn btn-circle btn-primary btn-lg shadow-xl"
+      @click="toggleExpand"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+      </svg>
+    </button>
 
-    <div v-else class="upload-panel">
-        <div class="panel-header">
-          <h3>上传列表</h3>
-          <div class="header-actions">
-            <button class="add-button" @click="triggerFileUpload">+</button>
-            <button class="close-button" @click="toggleExpand">×</button>
+    <div v-else class="card bg-base-100 shadow-xl w-80">
+      <div class="card-body p-0">
+        <div class="flex items-center justify-between p-4 border-b border-base-300">
+          <h3 class="font-bold">上传列表</h3>
+          <div class="flex gap-2">
+            <button class="btn btn-circle btn-sm btn-primary" @click="triggerFileUpload">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
+            <button class="btn btn-circle btn-sm btn-ghost" @click="toggleExpand">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
         </div>
 
-        <div class="upload-list">
+        <div class="max-h-80 overflow-y-auto p-4 space-y-2">
           <div
             v-for="task in uploadTasks"
             :key="task.id"
-            class="upload-item"
+            class="card bg-base-200 compact"
           >
-            <div class="item-info">
-              <span class="item-name">{{ task.fileName }}</span>
-              <span class="item-status">{{ task.status }}</span>
-            </div>
-            <div class="item-progress">
-              <div class="progress-bar">
-                <div
-                  class="progress-fill"
-                  :style="{ width: `${task.progress}%` }"
-                ></div>
+            <div class="card-body">
+              <div class="flex justify-between items-center mb-2">
+                <span class="font-medium truncate flex-1">{{ task.fileName }}</span>
+                <span class="text-xs opacity-60 uppercase ml-2">{{ task.status }}</span>
               </div>
-              <span class="progress-text">{{ task.progress }}%</span>
+              <progress 
+                class="progress progress-primary" 
+                :value="task.progress" 
+                max="100"
+              ></progress>
             </div>
           </div>
 
-          <div v-if="uploadTasks.length === 0" class="empty-state">
+          <div v-if="uploadTasks.length === 0" class="text-center py-8 opacity-60">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
             <p>暂无上传任务</p>
-            <p class="hint">点击右上角 + 按钮上传文件</p>
+            <p class="text-sm mt-1">点击右上角 + 按钮上传文件</p>
           </div>
         </div>
       </div>
+    </div>
   </div>
 </template>
-
-<style scoped>
-.upload-widget {
-  position: fixed;
-  right: 2rem;
-  bottom: 2rem;
-  z-index: 1000;
-}
-
-.upload-button {
-  width: 60px;
-  height: 60px;
-  border-radius: 50%;
-  background: #4a90e2;
-  color: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  box-shadow: 0 4px 12px rgba(74, 144, 226, 0.4);
-  transition: all 0.3s ease;
-}
-
-.upload-button:hover {
-  transform: scale(1.05);
-  box-shadow: 0 6px 16px rgba(74, 144, 226, 0.5);
-}
-
-.upload-icon {
-  width: 24px;
-  height: 24px;
-}
-
-.upload-panel {
-  width: 320px;
-  max-height: 400px;
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 1rem 1.5rem;
-  border-bottom: 1px solid #e0e0e0;
-  background: #f8f9fa;
-}
-
-.panel-header h3 {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 600;
-  color: #1a1a2e;
-}
-
-.header-actions {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.add-button,
-.close-button {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  border: none;
-  background: #4a90e2;
-  color: white;
-  font-size: 1.5rem;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.2s;
-  line-height: 1;
-  padding: 0;
-}
-
-.close-button {
-  background: #e0e0e0;
-  color: #666;
-}
-
-.add-button:hover {
-  background: #357abd;
-}
-
-.close-button:hover {
-  background: #d0d0d0;
-}
-
-.upload-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 1rem;
-}
-
-.upload-item {
-  padding: 0.75rem;
-  margin-bottom: 0.75rem;
-  background: #f8f9fa;
-  border-radius: 8px;
-  border: 1px solid #e0e0e0;
-}
-
-.item-info {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 0.5rem;
-}
-
-.item-name {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: #1a1a2e;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
-  margin-right: 0.5rem;
-}
-
-.item-status {
-  font-size: 0.75rem;
-  color: #666;
-  text-transform: uppercase;
-}
-
-.item-progress {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.progress-bar {
-  flex: 1;
-  height: 4px;
-  background: #e0e0e0;
-  border-radius: 2px;
-  overflow: hidden;
-}
-
-.progress-fill {
-  height: 100%;
-  background: #4a90e2;
-  transition: width 0.3s ease;
-}
-
-.progress-text {
-  font-size: 0.75rem;
-  color: #666;
-  min-width: 40px;
-  text-align: right;
-}
-
-.empty-state {
-  text-align: center;
-  padding: 2rem 1rem;
-  color: #999;
-}
-
-.empty-state p {
-  margin: 0.5rem 0;
-}
-
-.hint {
-  font-size: 0.875rem;
-  color: #bbb;
-}
-</style>

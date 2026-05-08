@@ -10,31 +10,9 @@ const isLoginPage = computed(() => route.name === 'login')
 </script>
 
 <template>
-  <div id="app">
+  <div data-theme="light" class="min-h-screen bg-base-200">
     <LoginView v-if="isLoginPage" />
-    <AppShell v-else>
-      <router-view />
-    </AppShell>
+    <AppShell v-else />
     <UploadWidget v-if="!isLoginPage" />
   </div>
 </template>
-
-<style>
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
-#app {
-  width: 100%;
-  height: 100vh;
-  overflow: hidden;
-}
-</style>

@@ -20,7 +20,7 @@ async function submit() {
   
   try {
     await authStore.login(username.value, password.value)
-    const target = typeof route.query.redirect === 'string' ? route.query.redirect : '/upload'
+    const target = typeof route.query.redirect === 'string' ? route.query.redirect : '/dashboard'
     router.push(target)
   } catch (err: any) {
     error.value = err.message || 'Login failed'
@@ -31,102 +31,62 @@ async function submit() {
 </script>
 
 <template>
-  <div class="login-view">
-    <div class="login-card">
-      <h1>Login</h1>
-      <form @submit.prevent="submit">
-        <div class="form-group">
-          <label for="username">Username</label>
-          <input
-            id="username"
-            v-model="username"
-            type="text"
-            required
-            :disabled="submitting"
-          />
+  <div class="hero min-h-screen bg-base-200">
+    <div class="hero-content flex-col lg:flex-row-reverse">
+      <div class="text-center lg:text-left">
+        <h1 class="text-5xl font-bold">K-Vault</h1>
+        <p class="py-6">免费图片/文件托管解决方案</p>
+      </div>
+      <div class="card flex-shrink-0 w-full max-w-sm shadow-2xl bg-base-100">
+        <div class="card-body">
+          <form @submit.prevent="submit">
+            <div class="form-control">
+              <label class="label">
+                <span class="label-text">用户名</span>
+              </label>
+              <input 
+                type="text" 
+                placeholder="username" 
+                class="input input-bordered" 
+                v-model="username"
+                required
+                :disabled="submitting"
+              />
+            </div>
+            <div class="form-control mt-4">
+              <label class="label">
+                <span class="label-text">密码</span>
+              </label>
+              <input 
+                type="password" 
+                placeholder="password" 
+                class="input input-bordered" 
+                v-model="password"
+                required
+                :disabled="submitting"
+              />
+            </div>
+            
+            <div v-if="error" class="alert alert-error mt-4">
+              <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span>{{ error }}</span>
+            </div>
+            
+            <div class="form-control mt-6">
+              <button 
+                type="submit" 
+                class="btn btn-primary"
+                :disabled="submitting"
+              >
+                <span v-if="submitting" class="loading loading-spinner"></span>
+                {{ submitting ? '登录中...' : '登录' }}
+              </button>
+            </div>
+          </form>
         </div>
-        <div class="form-group">
-          <label for="password">Password</label>
-          <input
-            id="password"
-            v-model="password"
-            type="password"
-            required
-            :disabled="submitting"
-          />
-        </div>
-        <div v-if="error" class="error">{{ error }}</div>
-        <button type="submit" :disabled="submitting">
-          {{ submitting ? 'Logging in...' : 'Login' }}
-        </button>
-      </form>
+      </div>
     </div>
   </div>
 </template>
-
-<style scoped>
-.login-view {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 100vh;
-  padding: 2rem;
-}
-
-.login-card {
-  width: 100%;
-  max-width: 400px;
-  padding: 2rem;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-h1 {
-  margin-bottom: 1.5rem;
-  text-align: center;
-}
-
-.form-group {
-  margin-bottom: 1rem;
-}
-
-label {
-  display: block;
-  margin-bottom: 0.5rem;
-  font-weight: 500;
-}
-
-input {
-  width: 100%;
-  padding: 0.5rem;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-}
-
-.error {
-  margin-bottom: 1rem;
-  padding: 0.5rem;
-  color: #d32f2f;
-  background-color: #ffebee;
-  border-radius: 4px;
-}
-
-button {
-  width: 100%;
-  padding: 0.75rem;
-  color: white;
-  background-color: #1976d2;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-button:hover:not(:disabled) {
-  background-color: #1565c0;
-}
-</style>
