@@ -53,6 +53,7 @@
 - **GitHub Actions 镜像构建** - 主分支/Tag 自动构建并推送 `api` + `web` 镜像
 - **D1 数据库支持** - 使用 Cloudflare D1 替代 KV，支持复杂查询和多级文件夹
 - **高效分页查询** - 基于数据库索引的毫秒级分页响应，支持数万文件
+- **新版前端** - Vue 3 + TypeScript 现代化 UI，仪表盘可视化
 
 ---
 
@@ -152,7 +153,68 @@
 
 **重新部署** - 修改环境变量后需重新部署生效
 
-### 第三步：创建 D1 数据库（Cloudflare Pages）
+### 第三步：部署新版前端（可选）
+
+项目提供新版前端（`frontend-v2`），采用 Vue 3 + TypeScript + Pinia 架构，提供更现代化的用户体验。
+
+#### 本地开发
+
+```bash
+# 安装依赖
+npm run frontend-v2:dev
+
+# 或者手动进入目录
+cd frontend-v2
+pnpm install
+pnpm dev
+```
+
+#### Cloudflare Pages 部署
+
+**方法一：修改构建配置（推荐）**
+
+在 Cloudflare Pages 项目设置中修改：
+
+1. **构建命令**：
+   ```bash
+   cd frontend-v2 && pnpm install && pnpm build
+   ```
+
+2. **输出目录**：
+   ```
+   frontend-v2/dist
+   ```
+
+**方法二：使用 npm 脚本**
+
+在项目根目录执行：
+```bash
+npm run frontend-v2:build
+```
+
+然后将 `frontend-v2/dist` 目录部署到 Cloudflare Pages。
+
+#### 新版前端特性
+
+- 🎨 现代化 UI 设计
+- 📊 仪表盘首页（容量使用可视化）
+- 📁 文件管理界面（支持文件夹导航）
+- 📤 上传功能（开发中）
+- 🌙 暗色模式（计划中）
+
+#### 新旧前端对比
+
+| 特性 | 旧版前端（frontend） | 新版前端（frontend-v2） |
+|------|---------------------|------------------------|
+| 框架 | Vue 3 | Vue 3 + TypeScript |
+| 状态管理 | Pinia | Pinia + TypeScript |
+| 路由 | Vue Router | Vue Router + 类型 |
+| UI 风格 | 经典 | 现代化 |
+| 仪表盘 | ❌ | ✅ |
+| 文件夹导航 | ❌ | ✅ |
+| TypeScript | ❌ | ✅ |
+
+### 第四步：创建 D1 数据库（Cloudflare Pages）
 
 v2.0 使用 D1 数据库替代 KV 存储，需要先创建并绑定数据库：
 
@@ -183,7 +245,7 @@ v2.0 使用 D1 数据库替代 KV 存储，需要先创建并绑定数据库：
    npx wrangler d1 execute kvault-db --file=./schema-d1.sql
    ```
 
-### 第四步：数据迁移（可选）
+### 第五步：数据迁移（可选）
 
 如果你从 v1.0 升级到 v2.0，需要将 KV 数据迁移到 D1 数据库。
 
@@ -226,7 +288,7 @@ curl -X POST https://你的域名/api/admin/migrate \
 - [Cloudflare Pages 迁移指南](docs/migration-cloudflare.md)
 - [Docker 迁移指南](docs/migration-docker.md)
 
-### 第五步：Docker 自托管部署（可选）
+### 第六步：Docker 自托管部署（可选）
 
 如果你希望在自己的 VPS/NAS 上运行（不依赖 Cloudflare Pages 运行时）：
 
@@ -264,7 +326,7 @@ docker compose --profile redis up -d --build
 
 完整 Docker 说明请查看 [README-DOCKER.md](README-DOCKER.md)。
 
-### WebDAV 回归验证（Cloudflare Pages / Docker 通用）
+### 第七步：WebDAV 回归验证（Cloudflare Pages / Docker 通用）
 
 部署完成后，建议至少执行一次 WebDAV 烟测，确认“配置测试 -> 上传 -> 下载 -> 删除”完整闭环。
 

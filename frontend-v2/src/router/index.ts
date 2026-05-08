@@ -19,18 +19,6 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '文件列表' }
   },
   {
-    path: '/trash',
-    name: 'trash',
-    component: () => import('../views/TrashView.vue'),
-    meta: { title: '回收站' }
-  },
-  {
-    path: '/settings',
-    name: 'settings',
-    component: () => import('../views/SettingsView.vue'),
-    meta: { title: '用户设置' }
-  },
-  {
     path: '/login',
     name: 'login',
     component: () => import('../views/LoginView.vue'),

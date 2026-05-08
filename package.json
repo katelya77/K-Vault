@@ -12,6 +12,8 @@
     "server:dev": "npm --prefix server run dev",
     "frontend:dev": "npm --prefix frontend run dev",
     "frontend:build": "npm --prefix frontend run build",
+    "frontend-v2:dev": "npm --prefix frontend-v2 run dev",
+    "frontend-v2:build": "cd frontend-v2 && pnpm install && pnpm build",
     "docker:up": "npm run docker:init-env && docker compose up -d --build",
     "docker:down": "docker compose down",
     "docker:doctor": "node scripts/docker-storage-doctor.js",

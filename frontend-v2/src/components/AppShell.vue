@@ -1,19 +1,23 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 
 const router = useRouter()
+const route = useRoute()
 const authStore = useAuthStore()
 
 const username = computed(() => authStore.username || 'User')
 const userMenuOpen = ref(false)
 
+const pageTitle = computed(() => {
+  const title = route.meta?.title as string
+  return title || 'K-Vault'
+})
+
 const sidebarItems = [
   { path: '/dashboard', icon: '📊', label: '仪表盘' },
-  { path: '/files', icon: '📁', label: '文件列表' },
-  { path: '/trash', icon: '🗑️', label: '回收站' },
-  { path: '/settings', icon: '⚙️', label: '用户设置' }
+  { path: '/files', icon: '📁', label: '文件列表' }
 ]
 
 function handleLogout() {
@@ -43,7 +47,7 @@ function handleLogout() {
 
     <div class="main-container">
       <header class="top-nav">
-        <div class="nav-title">K-Vault</div>
+        <div class="nav-title">{{ pageTitle }}</div>
         <div 
           class="user-menu"
           @mouseenter="userMenuOpen = true"
