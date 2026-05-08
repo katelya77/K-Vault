@@ -106,7 +106,7 @@ export async function onRequestPost(context) {
       if (!env.R2_BUCKET) {
         return jsonResponse({ error: 'R2 未配置，无法完成上传' }, 500);
       }
-      const uploadResult = await uploadToR2(file, fileExtension, env, obfuscationConfig.enabled ? actualFileName : taskData.fileName);
+      const uploadResult = await uploadToR2(file, fileExtension, env, actualFileName);
       responseFileKey = uploadResult.fileKey;
       metadataKey = uploadResult.fileKey;
     } else if (storageType === 's3') {

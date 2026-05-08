@@ -82,6 +82,17 @@ export async function onRequest(context) {
     }
 
     const recordResult = await getRecordWithKey(env, fileId);
+    
+    if (recordResult?.error) {
+      return new Response(JSON.stringify({
+        error: recordResult.error,
+        errorCode: recordResult.errorCode
+      }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+    
     const record = recordResult?.record;
     const kvKey = recordResult?.kvKey || fileId;
 
@@ -249,6 +260,10 @@ async function getRecordWithKey(env, fileId) {
     } catch (error) {
       debugError(env, 'DOWNLOAD', 'Database query error', error);
       console.error('Database query error:', error);
+      return {
+        error: 'Database query failed',
+        errorCode: 'DB_QUERY_ERROR'
+      };
     }
   }
 

@@ -54,12 +54,9 @@ export async function generateSHA256(input, env = null) {
     if (env) debugLog(env, 'OBFUSCATE', 'Generated SHA-256 hash', { input: input.substring(0, 50), hashHex: hashHex.substring(0, 16) + '...' });
     return hashHex;
   } catch (error) {
-    if (env) debugError(env, 'OBFUSCATE', 'SHA-256 generation failed', error);
-    console.error('SHA-256 generation failed:', error);
-    const timestamp = Date.now().toString();
-    const random = Math.random().toString(36).substring(2);
-    const fallback = `${timestamp}${random}`.replace(/[^a-z0-9]/g, '').substring(0, 64);
-    if (env) debugLog(env, 'OBFUSCATE', 'Using fallback hash', { fallback });
+    if (env) debugError(env, 'OBFUSCATE', 'SHA-256 generation failed, using UUID fallback', error);
+    console.error('SHA-256 generation failed, using UUID fallback:', error);
+    const fallback = generateUUID(env).replace(/-/g, '');
     return fallback;
   }
 }
