@@ -1,4 +1,4 @@
-﻿import { createS3Client } from "../utils/s3client.js";
+import { createS3Client } from "../utils/s3client.js";
 import { uploadToDiscord } from "../utils/discord.js";
 import { hasHuggingFaceConfig, uploadToHuggingFace } from "../utils/huggingface.js";
 import { hasWebDAVConfig, normalizeWebDAVPath, uploadToWebDAV } from "../utils/webdav.js";
@@ -13,6 +13,10 @@ import {
   shouldUseSignedTelegramLinks,
   shouldWriteTelegramMetadata,
 } from "../utils/telegram.js";
+import {
+  obfuscateFileName,
+  getObfuscationConfig,
+} from "../utils/obfuscate.js";
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024;
 const FETCH_TIMEOUT = 30000;
@@ -259,8 +263,18 @@ function appendCommonMetadata(metadata, folderPath) {
 }
 
 async function uploadToTelegram(arrayBuffer, fileName, fileExtension, contentType, fileSize, env, fallbackOrigin = "", folderPath = "") {
+  const obfuscationConfig = getObfuscationConfig(env);
+  let actualFileName = fileName;
+  let physicalFileName = null;
+  
+  if (obfuscationConfig.enabled) {
+    const obfuscated = await obfuscateFileName(fileName, obfuscationConfig);
+    physicalFileName = obfuscated.physicalFileName;
+    actualFileName = physicalFileName;
+  }
+
   const blob = new Blob([arrayBuffer], { type: contentType });
-  const file = new File([blob], fileName, { type: contentType });
+  const file = new File([blob], actualFileName, { type: contentType });
 
   const formData = new FormData();
   formData.append("chat_id", env.TG_Chat_ID);
@@ -295,16 +309,16 @@ async function uploadToTelegram(arrayBuffer, fileName, fileExtension, contentTyp
 
       const docData = await docResponse.json();
       if (docResponse.ok) {
-        return processTelegramSuccess(docData, fileName, fileExtension, contentType, fileSize, env, fallbackOrigin, folderPath);
+        return processTelegramSuccess(docData, fileName, fileExtension, contentType, fileSize, env, fallbackOrigin, folderPath, physicalFileName);
       }
     }
     return jsonResponse({ error: responseData.description || "Telegram upload failed" }, 500);
   }
 
-  return processTelegramSuccess(responseData, fileName, fileExtension, contentType, fileSize, env, fallbackOrigin, folderPath);
+  return processTelegramSuccess(responseData, fileName, fileExtension, contentType, fileSize, env, fallbackOrigin, folderPath, physicalFileName);
 }
 
-async function processTelegramSuccess(responseData, fileName, fileExtension, mimeType, fileSize, env, fallbackOrigin = "", folderPath = "") {
+async function processTelegramSuccess(responseData, fileName, fileExtension, mimeType, fileSize, env, fallbackOrigin = "", folderPath = "", physicalFileName = null) {
   const fileId = pickTelegramFileId(responseData);
   const messageId = responseData?.result?.message_id;
 
@@ -323,6 +337,7 @@ async function processTelegramSuccess(responseData, fileName, fileExtension, mim
           Label: "None",
           liked: false,
           fileName,
+          physicalFileName,
           fileSize,
           storageType: "telegram",
           telegramFileId: fileId,
@@ -363,12 +378,25 @@ async function processTelegramSuccess(responseData, fileName, fileExtension, mim
 
 async function uploadToR2(arrayBuffer, fileName, fileExtension, contentType, fileSize, env, folderPath = "") {
   try {
+    const obfuscationConfig = getObfuscationConfig(env);
+    let actualFileName = fileName;
+    let physicalFileName = null;
+    
+    if (obfuscationConfig.enabled) {
+      const obfuscated = await obfuscateFileName(fileName, obfuscationConfig);
+      physicalFileName = obfuscated.physicalFileName;
+      actualFileName = physicalFileName;
+    }
+
     const fileId = randomId("r2");
     const objectKey = `${fileId}.${fileExtension}`;
 
     await env.R2_BUCKET.put(objectKey, arrayBuffer, {
       httpMetadata: { contentType },
-      customMetadata: { fileName, uploadTime: Date.now().toString() },
+      customMetadata: { 
+        fileName: obfuscationConfig.enabled ? actualFileName : fileName, 
+        uploadTime: Date.now().toString() 
+      },
     });
 
     if (env.img_url) {
@@ -380,6 +408,7 @@ async function uploadToR2(arrayBuffer, fileName, fileExtension, contentType, fil
             Label: "None",
             liked: false,
             fileName,
+            physicalFileName,
             fileSize,
             storageType: "r2",
             r2Key: objectKey,
@@ -398,6 +427,16 @@ async function uploadToR2(arrayBuffer, fileName, fileExtension, contentType, fil
 
 async function uploadToS3(arrayBuffer, fileName, fileExtension, contentType, fileSize, env, folderPath = "") {
   try {
+    const obfuscationConfig = getObfuscationConfig(env);
+    let actualFileName = fileName;
+    let physicalFileName = null;
+    
+    if (obfuscationConfig.enabled) {
+      const obfuscated = await obfuscateFileName(fileName, obfuscationConfig);
+      physicalFileName = obfuscated.physicalFileName;
+      actualFileName = physicalFileName;
+    }
+
     const s3 = createS3Client(env);
     const fileId = randomId("s3");
     const objectKey = `${fileId}.${fileExtension}`;
@@ -405,7 +444,7 @@ async function uploadToS3(arrayBuffer, fileName, fileExtension, contentType, fil
     await s3.putObject(objectKey, arrayBuffer, {
       contentType,
       metadata: {
-        "x-amz-meta-filename": fileName,
+        "x-amz-meta-filename": obfuscationConfig.enabled ? actualFileName : fileName,
         "x-amz-meta-uploadtime": Date.now().toString(),
       },
     });
@@ -419,6 +458,7 @@ async function uploadToS3(arrayBuffer, fileName, fileExtension, contentType, fil
             Label: "None",
             liked: false,
             fileName,
+            physicalFileName,
             fileSize,
             storageType: "s3",
             s3Key: objectKey,
@@ -437,7 +477,17 @@ async function uploadToS3(arrayBuffer, fileName, fileExtension, contentType, fil
 
 async function uploadToDiscordStorage(arrayBuffer, fileName, fileExtension, contentType, fileSize, env, folderPath = "") {
   try {
-    const result = await uploadToDiscord(arrayBuffer, fileName, contentType, env);
+    const obfuscationConfig = getObfuscationConfig(env);
+    let actualFileName = fileName;
+    let physicalFileName = null;
+    
+    if (obfuscationConfig.enabled) {
+      const obfuscated = await obfuscateFileName(fileName, obfuscationConfig);
+      physicalFileName = obfuscated.physicalFileName;
+      actualFileName = physicalFileName;
+    }
+
+    const result = await uploadToDiscord(arrayBuffer, actualFileName, contentType, env);
 
     if (!result.success) {
       return jsonResponse({ error: `Discord upload failed: ${result.error}` }, 500);
@@ -455,6 +505,7 @@ async function uploadToDiscordStorage(arrayBuffer, fileName, fileExtension, cont
             Label: "None",
             liked: false,
             fileName,
+            physicalFileName,
             fileSize,
             storageType: "discord",
             discordChannelId: result.channelId,
@@ -477,10 +528,20 @@ async function uploadToDiscordStorage(arrayBuffer, fileName, fileExtension, cont
 
 async function uploadToHFStorage(arrayBuffer, fileName, fileExtension, _contentType, fileSize, env, folderPath = "") {
   try {
+    const obfuscationConfig = getObfuscationConfig(env);
+    let actualFileName = fileName;
+    let physicalFileName = null;
+    
+    if (obfuscationConfig.enabled) {
+      const obfuscated = await obfuscateFileName(fileName, obfuscationConfig);
+      physicalFileName = obfuscated.physicalFileName;
+      actualFileName = physicalFileName;
+    }
+
     const fileId = randomId("hf");
     const hfPath = joinStoragePath(folderPath, `${fileId}.${fileExtension}`);
 
-    const result = await uploadToHuggingFace(arrayBuffer, hfPath, fileName, env);
+    const result = await uploadToHuggingFace(arrayBuffer, hfPath, actualFileName, env);
     if (!result.success) {
       return jsonResponse({ error: `HuggingFace upload failed: ${result.error}` }, 500);
     }
@@ -496,6 +557,7 @@ async function uploadToHFStorage(arrayBuffer, fileName, fileExtension, _contentT
             Label: "None",
             liked: false,
             fileName,
+            physicalFileName,
             fileSize,
             storageType: "huggingface",
             hfPath,
@@ -514,6 +576,16 @@ async function uploadToHFStorage(arrayBuffer, fileName, fileExtension, _contentT
 
 async function uploadToWebDAVStorage(arrayBuffer, fileName, fileExtension, contentType, fileSize, env, folderPath = "") {
   try {
+    const obfuscationConfig = getObfuscationConfig(env);
+    let actualFileName = fileName;
+    let physicalFileName = null;
+    
+    if (obfuscationConfig.enabled) {
+      const obfuscated = await obfuscateFileName(fileName, obfuscationConfig);
+      physicalFileName = obfuscated.physicalFileName;
+      actualFileName = physicalFileName;
+    }
+
     const fileId = randomId("wd");
     const publicId = `${fileId}.${fileExtension}`;
     const webdavPath = joinStoragePath(folderPath, publicId);
@@ -530,6 +602,7 @@ async function uploadToWebDAVStorage(arrayBuffer, fileName, fileExtension, conte
             Label: "None",
             liked: false,
             fileName,
+            physicalFileName,
             fileSize,
             storageType: "webdav",
             webdavPath: normalizeWebDAVPath(result.path || webdavPath),
@@ -549,6 +622,16 @@ async function uploadToWebDAVStorage(arrayBuffer, fileName, fileExtension, conte
 
 async function uploadToGitHubStorage(arrayBuffer, fileName, fileExtension, contentType, fileSize, env, folderPath = "") {
   try {
+    const obfuscationConfig = getObfuscationConfig(env);
+    let actualFileName = fileName;
+    let physicalFileName = null;
+    
+    if (obfuscationConfig.enabled) {
+      const obfuscated = await obfuscateFileName(fileName, obfuscationConfig);
+      physicalFileName = obfuscated.physicalFileName;
+      actualFileName = physicalFileName;
+    }
+
     const fileId = randomId("github");
     const publicId = `${fileId}.${fileExtension}`;
     const githubStorageKey = joinStoragePath(folderPath, publicId);
@@ -556,7 +639,7 @@ async function uploadToGitHubStorage(arrayBuffer, fileName, fileExtension, conte
     const result = await uploadToGitHub(
       arrayBuffer,
       normalizeGitHubStoragePath(githubStorageKey),
-      fileName,
+      actualFileName,
       contentType || "application/octet-stream",
       env
     );
@@ -571,6 +654,7 @@ async function uploadToGitHubStorage(arrayBuffer, fileName, fileExtension, conte
             Label: "None",
             liked: false,
             fileName,
+            physicalFileName,
             fileSize,
             storageType: "github",
             githubStorageKey: normalizeGitHubStoragePath(result.storagePath || githubStorageKey),

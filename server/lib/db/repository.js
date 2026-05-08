@@ -65,6 +65,7 @@ export class FileRepository {
       storageKey,
       storageFileId,
       fileName,
+      physicalFileName,
       fileSize,
       mimeType,
       folderId,
@@ -80,12 +81,12 @@ export class FileRepository {
     await this.db.prepare(`
       INSERT INTO files (
         id, storage_config_id, storage_type, storage_key, storage_file_id,
-        file_name, file_size, mime_type, folder_id, folder_path,
+        file_name, physical_file_name, file_size, mime_type, folder_id, folder_path,
         list_type, label, liked, extra_json, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).bind(
       id, storageConfigId, storageType, storageKey, storageFileId,
-      fileName, fileSize, mimeType, folderId, folderPath,
+      fileName, physicalFileName, fileSize, mimeType, folderId, folderPath,
       listType, label, liked ? 1 : 0, extraJson, now, now
     ).run();
 
@@ -104,6 +105,16 @@ export class FileRepository {
     const result = await this.db.prepare(`
       SELECT * FROM files WHERE storage_key = ?
     `).bind(storageKey).first();
+    
+    return result;
+  }
+
+  async findByFileId(fileId) {
+    const result = await this.db.prepare(`
+      SELECT * FROM files 
+      WHERE id = ? OR storage_key = ? OR physical_file_name = ?
+      LIMIT 1
+    `).bind(fileId, fileId, fileId).first();
     
     return result;
   }
@@ -176,7 +187,7 @@ export class FileRepository {
 
   async update(id, updates) {
     const allowedFields = [
-      'file_name', 'folder_id', 'folder_path', 'list_type', 
+      'file_name', 'physical_file_name', 'folder_id', 'folder_path', 'list_type', 
       'label', 'liked', 'extra_json'
     ];
     

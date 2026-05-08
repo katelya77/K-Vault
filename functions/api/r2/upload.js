@@ -4,6 +4,10 @@
  */
 
 import { createStorageManager, generateKey, getFileType } from '../../utils/storage.js';
+import {
+  obfuscateFileName,
+  getObfuscationConfig,
+} from '../../utils/obfuscate.js';
 
 export async function onRequestPost(context) {
   const { request, env } = context;
@@ -31,6 +35,17 @@ export async function onRequestPost(context) {
       });
     }
     
+    // 文件名混淆
+    const obfuscationConfig = getObfuscationConfig(env);
+    let actualFileName = file.name;
+    let physicalFileName = null;
+    
+    if (obfuscationConfig.enabled) {
+      const obfuscated = await obfuscateFileName(file.name, obfuscationConfig);
+      physicalFileName = obfuscated.physicalFileName;
+      actualFileName = physicalFileName;
+    }
+    
     // 生成文件 ID
     const timestamp = Date.now();
     const randomStr = Math.random().toString(36).substring(2, 10);
@@ -46,7 +61,7 @@ export async function onRequestPost(context) {
         contentType: file.type || 'application/octet-stream'
       },
       customMetadata: {
-        fileName: file.name,
+        fileName: obfuscationConfig.enabled ? actualFileName : file.name,
         fileSize: String(file.size),
         uploadTime: String(timestamp),
         fileType: getFileType(file.name)
@@ -59,6 +74,7 @@ export async function onRequestPost(context) {
       await env.img_url.put(key, '', {
         metadata: {
           fileName: file.name,
+          physicalFileName,
           fileSize: file.size,
           TimeStamp: timestamp,
           storage: 'r2',

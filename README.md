@@ -309,6 +309,50 @@ curl -i -X POST "http://localhost:8080/api/auth/login" \
 
 ---
 
+## 文件名混淆
+
+### 功能说明
+
+文件名混淆功能通过将上传文件的原始文件名替换为随机生成的 UUID 或 SHA-256 哈希值，防止第三方平台（如 GitHub、Hugging Face）的特征扫描和自动封禁，提升存储账户的绝对安全性。
+
+**主要特性：**
+- ✅ 防止敏感文件名触发第三方平台扫描
+- ✅ 降低存储账户被自动封禁的风险
+- ✅ 保护用户隐私
+- ✅ 完全兼容旧文件（未混淆的文件可正常访问）
+- ✅ 支持所有存储后端（Telegram、R2、S3、Discord、HuggingFace、WebDAV、GitHub）
+
+### 环境变量配置
+
+| 变量名 | 说明 | 必需 | 默认值 |
+| :--- | :--- | :---: | :--- |
+| `OBFUSCATE_FILE_NAMES` | 是否启用文件名混淆 | 否 | `false` |
+| `OBFUSCATE_METHOD` | 混淆方法：`uuid` 或 `sha256` | 否 | `uuid` |
+| `OBFUSCATE_EXTENSION` | 文件后缀：`.bin`、`.data` 等 | 否 | `.bin` |
+
+### 使用示例
+
+```bash
+# 启用文件名混淆
+OBFUSCATE_FILE_NAMES=true
+
+# 使用 UUID 方法（默认）
+OBFUSCATE_METHOD=uuid
+
+# 使用 .bin 后缀（默认）
+OBFUSCATE_EXTENSION=.bin
+```
+
+### 工作原理
+
+1. **上传时**：将原始文件名替换为随机 UUID + 统一后缀（如 `a1b2c3d4e5f6.bin`）
+2. **存储时**：在数据库中保存原始文件名与物理文件名的映射关系
+3. **下载时**：查询数据库获取原始文件名，通过 `Content-Disposition` 响应头返回给浏览器
+
+**详细文档**：[文件名混淆功能](docs/file-obfuscation.md)
+
+---
+
 ## 存储配置
 
 ### Telegram 增强模式（自部署 Bot API + Webhook）

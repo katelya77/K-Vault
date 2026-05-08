@@ -1,4 +1,4 @@
-﻿import { createS3Client } from '../utils/s3client.js';
+import { createS3Client } from '../utils/s3client.js';
 import { getDiscordFileUrl } from '../utils/discord.js';
 import { getHuggingFaceFile } from '../utils/huggingface.js';
 import { getWebDAVFile } from '../utils/webdav.js';
@@ -9,6 +9,8 @@ import {
   parseSignedTelegramFileId,
   shouldWriteTelegramMetadata,
 } from '../utils/telegram.js';
+import { FileRepository } from '../../server/lib/db/repository.js';
+import { generateContentDisposition, getMimeType } from '../utils/obfuscate.js';
 
 const STORAGE_PREFIXES = ['img:', 'vid:', 'aud:', 'doc:', 'r2:', 's3:', 'discord:', 'hf:', 'webdav:', 'github:', ''];
 
@@ -210,6 +212,39 @@ function blockRedirect(requestUrl, request) {
 }
 
 async function getRecordWithKey(env, fileId) {
+  if (env.DB) {
+    try {
+      const fileRepo = new FileRepository(env.DB);
+      
+      const file = await fileRepo.findByFileId(fileId);
+      
+      if (file) {
+        return {
+          record: {
+            metadata: {
+              fileName: file.file_name,
+              physicalFileName: file.physical_file_name,
+              fileSize: file.file_size,
+              mimeType: file.mime_type,
+              storageType: file.storage_type,
+              storageKey: file.storage_key,
+              storageFileId: file.storage_file_id,
+              TimeStamp: file.created_at,
+              ListType: file.list_type,
+              Label: file.label,
+              liked: file.liked,
+              ...JSON.parse(file.extra_json || '{}')
+            }
+          },
+          kvKey: file.storage_key,
+          dbFile: file
+        };
+      }
+    } catch (error) {
+      console.error('Database query error:', error);
+    }
+  }
+
   if (!env.img_url) return { record: null, kvKey: fileId };
 
   const hasKnownPrefix = STORAGE_PREFIXES.some((prefix) => prefix && fileId.startsWith(prefix));
@@ -312,7 +347,7 @@ async function handleTelegramFile(context, fileId, record = null) {
   }
 
   const fileName = metadata.fileName || fileId;
-  const mimeType = getMimeType(fileName);
+  const mimeType = metadata.mimeType || getMimeType(fileName);
 
   const telegramFileId = String(fileId).split('.')[0];
   const filePath = await getTelegramFilePath(env, telegramFileId);

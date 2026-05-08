@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Complete chunked upload request.
  * POST /api/chunked-upload/complete
  */
@@ -18,6 +18,10 @@ import {
   shouldUseSignedTelegramLinks,
   shouldWriteTelegramMetadata,
 } from '../../utils/telegram.js';
+import {
+  obfuscateFileName,
+  getObfuscationConfig,
+} from '../../utils/obfuscate.js';
 
 const TEMP_CHUNK_PREFIX = 'chunk-upload';
 
@@ -77,8 +81,18 @@ export async function onRequestPost(context) {
       chunks.push(chunkData);
     }
 
+    const obfuscationConfig = getObfuscationConfig(env);
+    let actualFileName = taskData.fileName;
+    let physicalFileName = null;
+    
+    if (obfuscationConfig.enabled) {
+      const obfuscated = await obfuscateFileName(taskData.fileName, obfuscationConfig);
+      physicalFileName = obfuscated.physicalFileName;
+      actualFileName = physicalFileName;
+    }
+
     const completeFile = new Blob(chunks, { type: taskData.fileType || 'application/octet-stream' });
-    const file = new File([completeFile], taskData.fileName, { type: taskData.fileType || 'application/octet-stream' });
+    const file = new File([completeFile], actualFileName, { type: taskData.fileType || 'application/octet-stream' });
 
     const fileExtension = getFileExtension(taskData.fileName);
     let storageType = taskData.storageMode || 'telegram';
@@ -92,7 +106,7 @@ export async function onRequestPost(context) {
       if (!env.R2_BUCKET) {
         return jsonResponse({ error: 'R2 未配置，无法完成上传' }, 500);
       }
-      const uploadResult = await uploadToR2(file, fileExtension, env);
+      const uploadResult = await uploadToR2(file, fileExtension, env, obfuscationConfig.enabled ? actualFileName : taskData.fileName);
       responseFileKey = uploadResult.fileKey;
       metadataKey = uploadResult.fileKey;
     } else if (storageType === 's3') {
@@ -105,7 +119,7 @@ export async function onRequestPost(context) {
       const arrayBuffer = await file.arrayBuffer();
       await s3.putObject(s3Key, arrayBuffer, {
         contentType: file.type || 'application/octet-stream',
-        metadata: { 'x-amz-meta-filename': taskData.fileName },
+        metadata: { 'x-amz-meta-filename': obfuscationConfig.enabled ? actualFileName : taskData.fileName },
       });
       responseFileKey = `s3:${s3Key}`;
       metadataKey = responseFileKey;
@@ -115,7 +129,7 @@ export async function onRequestPost(context) {
         return jsonResponse({ error: 'Discord 未配置，无法完成上传' }, 500);
       }
       const arrayBuffer = await file.arrayBuffer();
-      const discordResult = await uploadToDiscord(arrayBuffer, taskData.fileName, taskData.fileType, env);
+      const discordResult = await uploadToDiscord(arrayBuffer, actualFileName, taskData.fileType, env);
       if (!discordResult.success) {
         return jsonResponse({ error: 'Discord 上传失败: ' + discordResult.error }, 500);
       }
@@ -134,7 +148,7 @@ export async function onRequestPost(context) {
       const arrayBuffer = await file.arrayBuffer();
       const hfId = `hf_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
       const hfPath = joinStoragePath(folderPath, `${hfId}.${fileExtension}`);
-      const hfResult = await uploadToHuggingFace(arrayBuffer, hfPath, taskData.fileName, env);
+      const hfResult = await uploadToHuggingFace(arrayBuffer, hfPath, actualFileName, env);
       if (!hfResult.success) {
         return jsonResponse({ error: 'HuggingFace 上传失败: ' + hfResult.error }, 500);
       }
@@ -170,7 +184,7 @@ export async function onRequestPost(context) {
       const githubResult = await uploadToGitHub(
         arrayBuffer,
         normalizeGitHubStoragePath(githubStorageKey),
-        taskData.fileName,
+        actualFileName,
         file.type || 'application/octet-stream',
         env
       );
@@ -222,6 +236,7 @@ export async function onRequestPost(context) {
           Label: 'None',
           liked: false,
           fileName: taskData.fileName,
+          physicalFileName,
           fileSize: taskData.fileSize,
           chunked: true,
           totalChunks,
@@ -376,7 +391,7 @@ async function uploadToTelegram(file, env) {
   }
 }
 
-async function uploadToR2(file, fileExtension, env) {
+async function uploadToR2(file, fileExtension, env, fileName) {
   const fileId = `r2_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
   const objectKey = `${fileId}.${fileExtension}`;
   const arrayBuffer = await file.arrayBuffer();
@@ -386,7 +401,7 @@ async function uploadToR2(file, fileExtension, env) {
       contentType: file.type || 'application/octet-stream',
     },
     customMetadata: {
-      fileName: file.name,
+      fileName,
       uploadTime: Date.now().toString(),
     },
   });

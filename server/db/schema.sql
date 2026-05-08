@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS files (
   storage_key TEXT NOT NULL,
   storage_file_id TEXT,
   file_name TEXT NOT NULL,
+  physical_file_name TEXT,
   file_size INTEGER NOT NULL DEFAULT 0,
   mime_type TEXT,
   folder_id TEXT,
