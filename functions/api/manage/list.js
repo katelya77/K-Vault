@@ -58,7 +58,7 @@ export async function onRequestGet(context) {
   const url = new URL(request.url);
 
   try {
-    const fileRepo = new FileRepository(env.DB);
+    const fileRepo = new FileRepository(env.DB, env);
 
     const page = parsePositiveInt(url.searchParams.get('page'), 1, 1, 10000);
     const pageSize = parsePositiveInt(url.searchParams.get('pageSize'), 20, 1, 200);

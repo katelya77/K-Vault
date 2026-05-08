@@ -22,6 +22,7 @@ import {
   isFileNameObfuscationEnabled,
   getObfuscationConfig,
 } from "./utils/obfuscate.js";
+import { debugLog, debugError, debugInfo } from "./utils/debug.js";
 
 function generateFileId() {
   const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -41,7 +42,7 @@ async function saveFileMetadata(env, fileData) {
   }
 
   try {
-    const fileRepo = new FileRepository(env.DB);
+    const fileRepo = new FileRepository(env.DB, env);
     
     const id = fileData.id || generateFileId();
     
@@ -245,7 +246,8 @@ async function uploadToTelegramStorage(
   let physicalFileName = null;
   
   if (obfuscationConfig.enabled) {
-    const obfuscated = await obfuscateFileName(fileName, obfuscationConfig);
+    debugLog(env, 'UPLOAD', 'File name obfuscation enabled', { fileName, method: obfuscationConfig.method });
+    const obfuscated = await obfuscateFileName(fileName, { ...obfuscationConfig, env });
     physicalFileName = obfuscated.physicalFileName;
     actualFileName = physicalFileName;
   }
@@ -415,6 +417,7 @@ async function sendToTelegram(formData, apiEndpoint, env, retryCount = 0) {
 }
 
 async function uploadToR2(file, fileName, fileExtension, env, folderPath = "") {
+  debugLog(env, 'UPLOAD', 'Starting R2 upload', { fileName, fileExtension, folderPath });
   try {
     const obfuscationConfig = getObfuscationConfig(env);
     let actualFileName = fileName;
@@ -478,6 +481,7 @@ async function uploadToR2(file, fileName, fileExtension, env, folderPath = "") {
 }
 
 async function uploadToS3(file, fileName, fileExtension, env, folderPath = "") {
+  debugLog(env, 'UPLOAD', 'Starting S3 upload', { fileName, fileExtension, folderPath });
   try {
     const obfuscationConfig = getObfuscationConfig(env);
     let actualFileName = fileName;

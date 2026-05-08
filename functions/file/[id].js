@@ -11,6 +11,7 @@ import {
 } from '../utils/telegram.js';
 import { FileRepository } from '../../server/lib/db/repository.js';
 import { generateContentDisposition, getMimeType } from '../utils/obfuscate.js';
+import { debugLog, debugError, debugInfo } from '../utils/debug.js';
 
 const STORAGE_PREFIXES = ['img:', 'vid:', 'aud:', 'doc:', 'r2:', 's3:', 'discord:', 'hf:', 'webdav:', 'github:', ''];
 
@@ -212,13 +213,16 @@ function blockRedirect(requestUrl, request) {
 }
 
 async function getRecordWithKey(env, fileId) {
+  debugLog(env, 'DOWNLOAD', 'Getting file record', { fileId });
+  
   if (env.DB) {
     try {
-      const fileRepo = new FileRepository(env.DB);
+      const fileRepo = new FileRepository(env.DB, env);
       
       const file = await fileRepo.findByFileId(fileId);
       
       if (file) {
+        debugLog(env, 'DOWNLOAD', 'File found in database', { fileId, fileName: file.file_name });
         return {
           record: {
             metadata: {
@@ -239,13 +243,21 @@ async function getRecordWithKey(env, fileId) {
           kvKey: file.storage_key,
           dbFile: file
         };
+      } else {
+        debugLog(env, 'DOWNLOAD', 'File not found in database', { fileId });
       }
     } catch (error) {
+      debugError(env, 'DOWNLOAD', 'Database query error', error);
       console.error('Database query error:', error);
     }
   }
 
-  if (!env.img_url) return { record: null, kvKey: fileId };
+  if (!env.img_url) {
+    debugLog(env, 'DOWNLOAD', 'KV storage not available', { fileId });
+    return { record: null, kvKey: fileId };
+  }
+
+  debugLog(env, 'DOWNLOAD', 'Trying KV storage', { fileId });
 
   const hasKnownPrefix = STORAGE_PREFIXES.some((prefix) => prefix && fileId.startsWith(prefix));
   const candidateKeys = hasKnownPrefix ? [fileId] : STORAGE_PREFIXES.map((prefix) => `${prefix}${fileId}`);
@@ -253,10 +265,12 @@ async function getRecordWithKey(env, fileId) {
   for (const key of candidateKeys) {
     const record = await env.img_url.getWithMetadata(key);
     if (record?.metadata) {
+      debugLog(env, 'DOWNLOAD', 'File found in KV', { fileId, key });
       return { record, kvKey: key };
     }
   }
 
+  debugLog(env, 'DOWNLOAD', 'File not found', { fileId });
   return { record: null, kvKey: fileId };
 }
 

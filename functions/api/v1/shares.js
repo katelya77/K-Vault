@@ -45,7 +45,7 @@ export async function onRequestPost(context) {
     }
 
     const shareRepo = new ShareRepository(env.DB);
-    const fileRepo = new FileRepository(env.DB);
+    const fileRepo = new FileRepository(env.DB, env);
     const body = await request.json();
 
     const fileId = body.fileId;
@@ -160,7 +160,7 @@ export async function onRequestGet(context) {
 
     const shares = await Promise.all(
       result.items.map(async (share) => {
-        const fileRepo = new FileRepository(env.DB);
+        const fileRepo = new FileRepository(env.DB, env);
         const file = await fileRepo.findById(share.file_id);
         return {
           id: share.id,

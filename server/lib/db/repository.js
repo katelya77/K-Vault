@@ -3,6 +3,8 @@
  * 支持 D1 (Cloudflare Pages) 和 SQLite (Docker)
  */
 
+import { debugLog, debugError } from '../../functions/utils/debug.js';
+
 export class DatabaseClient {
   constructor(db) {
     this.db = db;
@@ -53,8 +55,9 @@ export function createSQLiteClient(sqliteDatabase) {
  * 文件仓库
  */
 export class FileRepository {
-  constructor(db) {
+  constructor(db, env = null) {
     this.db = db;
+    this.env = env;
   }
 
   async create(fileData) {
@@ -76,6 +79,8 @@ export class FileRepository {
       extraJson = '{}'
     } = fileData;
 
+    debugLog(this.env, 'DB', 'Creating file record', { id, fileName, storageType });
+
     const now = Date.now();
     
     await this.db.prepare(`
@@ -94,27 +99,48 @@ export class FileRepository {
   }
 
   async findById(id) {
+    debugLog(this.env, 'DB', 'Finding file by ID', { id });
     const result = await this.db.prepare(`
       SELECT * FROM files WHERE id = ?
     `).bind(id).first();
+    
+    if (result) {
+      debugLog(this.env, 'DB', 'File found by ID', { id, fileName: result.file_name });
+    } else {
+      debugLog(this.env, 'DB', 'File not found by ID', { id });
+    }
     
     return result;
   }
 
   async findByStorageKey(storageKey) {
+    debugLog(this.env, 'DB', 'Finding file by storage key', { storageKey });
     const result = await this.db.prepare(`
       SELECT * FROM files WHERE storage_key = ?
     `).bind(storageKey).first();
+    
+    if (result) {
+      debugLog(this.env, 'DB', 'File found by storage key', { storageKey, fileName: result.file_name });
+    } else {
+      debugLog(this.env, 'DB', 'File not found by storage key', { storageKey });
+    }
     
     return result;
   }
 
   async findByFileId(fileId) {
+    debugLog(this.env, 'DB', 'Finding file by file ID', { fileId });
     const result = await this.db.prepare(`
       SELECT * FROM files 
       WHERE id = ? OR storage_key = ? OR physical_file_name = ?
       LIMIT 1
     `).bind(fileId, fileId, fileId).first();
+    
+    if (result) {
+      debugLog(this.env, 'DB', 'File found by file ID', { fileId, fileName: result.file_name });
+    } else {
+      debugLog(this.env, 'DB', 'File not found by file ID', { fileId });
+    }
     
     return result;
   }

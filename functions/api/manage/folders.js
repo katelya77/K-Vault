@@ -26,7 +26,7 @@ export async function onRequestGet(context) {
 
   try {
     const folderRepo = new FolderRepository(env.DB);
-    const fileRepo = new FileRepository(env.DB);
+    const fileRepo = new FileRepository(env.DB, env);
 
     const parentId = url.searchParams.get('parentId');
     const path = url.searchParams.get('path');
@@ -209,7 +209,7 @@ export async function onRequestDelete(context) {
 
   try {
     const folderRepo = new FolderRepository(env.DB);
-    const fileRepo = new FileRepository(env.DB);
+    const fileRepo = new FileRepository(env.DB, env);
 
     const folderId = url.searchParams.get('id');
     const path = url.searchParams.get('path');
