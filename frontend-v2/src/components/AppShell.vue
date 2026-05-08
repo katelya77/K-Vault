@@ -78,8 +78,8 @@ function handleLogout() {
         <div class="p-4 border-b border-base-content/10">
           <h2 class="text-xl font-bold">K-Vault</h2>
         </div>
-        <ul class="menu p-4">
-          <li v-for="item in sidebarItems" :key="item.path">
+        <ul class="menu">
+          <li v-for="item in sidebarItems" :key="item.path" class="px-4 py-1">
             <router-link 
               :to="item.path"
               class="gap-3"
@@ -117,5 +117,19 @@ function handleLogout() {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+.menu {
+  width: 100%;
+}
+
+.menu li {
+  width: 100%;
+}
+
+.menu li a {
+  width: 100%;
+  display: flex;
+  border-radius: 0.5rem;
 }
 </style>
