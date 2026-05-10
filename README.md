@@ -262,27 +262,34 @@ https://你的域名/api/v4/admin/init-db?token=你的JWT_SECRET&action=init
 #### JWT 鉴权说明
 
 部分管理 API 端点需要 JWT 鉴权：
-
+https://vpan.f3c.top/api/v4/admin/init-db?token=你的JWT_SECRET&action=init
 | 环境变量 | 说明 |
 |---------|------|
 | `JWT_SECRET` | API 密钥，为空则受保护端点返回 503 |
 
-**使用方式：**
+**使用方式（所有管理 API 通用）：**
 
 ```bash
 # URL 参数
-https://域名/api/v4/admin/init-db?token=你的JWT_SECRET
+https://域名/api/v4/admin/init-db?token=你的JWT_SECRET&action=init
+https://域名/api/v4/admin/migrate-kv?token=你的JWT_SECRET&action=migrate
 
 # 请求头
 curl -H "Authorization: Bearer 你的JWT_SECRET" https://域名/api/v4/admin/init-db
+curl -H "Authorization: Bearer 你的JWT_SECRET" https://域名/api/v4/admin/migrate-kv
 ```
 
-#### 数据库管理 API
+#### 数据库管理 API（均需 JWT 鉴权）
 
 | 端点 | 说明 |
 |------|------|
 | `/api/v4/admin/init-db` | 查看数据库状态 |
 | `/api/v4/admin/init-db?action=init` | 初始化表结构并执行迁移 |
+| `/api/v4/admin/migrate-kv` | 查看 KV 统计数据（来源/前缀/数量）和 D1 统计 |
+| `/api/v4/admin/migrate-kv?action=migrate` | 将 KV 数据迁移到 D1 数据库（迁移后自动清空 KV） |
+| `/api/v4/admin/migrate-kv?action=migrate&keepKV=true` | 迁移 KV 数据到 D1，保留 KV 原数据 |
+
+> 迁移 KV 数据时会自动跳过 D1 中已存在的记录，可重复执行。
 
 **详细迁移说明**：
 - [Cloudflare Pages 迁移指南](docs/migration-cloudflare.md)
