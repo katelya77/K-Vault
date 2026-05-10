@@ -15,7 +15,7 @@ const PUBLIC_PATHS = [
 ];
 
 function isPublicPath(pathname) {
-  return PUBLIC_PATHS.some(p => pathname === p || pathname.startsWith(p + '?') || pathname.startsWith(p + '#'));
+  return PUBLIC_PATHS.some(p => pathname === p || pathname.startsWith(p + '/') || pathname.startsWith(p + '?') || pathname.startsWith(p + '#'));
 }
 
 function addCorsHeaders(headers) {
