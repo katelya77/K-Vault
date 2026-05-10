@@ -50,8 +50,20 @@ export async function onRequestGet(context) {
   const capacity = parseStorageCapacity(env.STORAGE_TOTAL_CAPACITY);
   const totalCapacity = capacity !== null ? capacity : 114 * 1024 ** 4;
 
+  let used = 0;
+  if (env.DB) {
+    try {
+      const result = await env.DB.prepare(
+        'SELECT COALESCE(SUM(file_size), 0) as used FROM files'
+      ).first();
+      used = Number(result?.used || 0);
+    } catch (e) {
+      // ignore db error, fallback to 0
+    }
+  }
+
   return cloudreveSuccess({
     total: totalCapacity,
-    used: 0,
+    used,
   });
 }
