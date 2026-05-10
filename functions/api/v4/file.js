@@ -30,7 +30,17 @@ export async function onRequestGet(context) {
       root_uri: 'cloudreve://my',
       root_name: '我的文件',
     },
-    parent: null,
+    parent: {
+      id: 'root',
+      name: '我的文件',
+      type: 1,
+      path: '/',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      size: 0,
+      owned: true,
+      capability: 'wUKA',
+    },
     storage_policy: {
       id: 'default',
       name: 'Default Storage',
