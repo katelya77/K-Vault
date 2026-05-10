@@ -39,10 +39,10 @@ export async function onRequest(context) {
     if (isAuthRequired(context.env)) {
       const authResult = await checkAuthentication(context);
       if (!authResult.authenticated) {
-        return new Response('Unauthorized', {
+        return new Response(JSON.stringify({ code: 401, msg: '请先登录', error: 'Login required' }), {
           status: 401,
           headers: {
-            'Content-Type': 'text/plain;charset=UTF-8',
+            'Content-Type': 'application/json',
             'Cache-Control': 'no-store',
           },
         });

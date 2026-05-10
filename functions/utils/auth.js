@@ -179,6 +179,17 @@ export function isAuthRequired(env) {
 }
 
 /**
+ * 从 Authorization Header 获取 Bearer Token
+ */
+function getBearerToken(request) {
+  const authorization = request.headers.get('Authorization');
+  if (!authorization) return null;
+  const [scheme, token] = authorization.split(' ');
+  if (scheme !== 'Bearer' || !token) return null;
+  return token;
+}
+
+/**
  * 综合认证检查
  */
 export async function checkAuthentication(context) {
@@ -193,6 +204,12 @@ export async function checkAuthentication(context) {
   const sessionToken = getSessionFromCookie(request);
   if (sessionToken && await verifySession(sessionToken, env)) {
     return { authenticated: true, reason: 'session', token: sessionToken };
+  }
+  
+  // 检查 Bearer Token（前端用这种方式）
+  const bearerToken = getBearerToken(request);
+  if (bearerToken && await verifySession(bearerToken, env)) {
+    return { authenticated: true, reason: 'bearer', token: bearerToken };
   }
   
   // 检查 Basic Auth
