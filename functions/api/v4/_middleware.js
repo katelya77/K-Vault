@@ -1,7 +1,20 @@
 /**
- * v4 API - CORS 中间件
- * 处理 CORS 预检请求和响应头
+ * v4 API - CORS 中间件 + 鉴权
  */
+
+import { checkAuthentication, isAuthRequired } from '../../utils/auth.js';
+
+const PUBLIC_PATHS = [
+  '/api/v4/session/token',
+  '/api/v4/session/token/refresh',
+  '/api/v4/session/token/2fa',
+  '/api/v4/site/config/explorer',
+  '/api/v4/site/captcha',
+];
+
+function isPublicPath(pathname) {
+  return PUBLIC_PATHS.some(p => pathname === p || pathname.startsWith(p + '?') || pathname.startsWith(p + '#'));
+}
 
 function addCorsHeaders(headers) {
   headers.set('Access-Control-Allow-Origin', '*');
@@ -19,6 +32,22 @@ export async function onRequest(context) {
       status: 204,
       headers: addCorsHeaders(new Headers()),
     });
+  }
+
+  const url = new URL(request.url);
+  if (!isPublicPath(url.pathname)) {
+    if (isAuthRequired(context.env)) {
+      const authResult = await checkAuthentication(context);
+      if (!authResult.authenticated) {
+        return new Response('Unauthorized', {
+          status: 401,
+          headers: {
+            'Content-Type': 'text/plain;charset=UTF-8',
+            'Cache-Control': 'no-store',
+          },
+        });
+      }
+    }
   }
   
   const response = await context.next();
