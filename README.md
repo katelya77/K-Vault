@@ -252,40 +252,37 @@ v2.0 使用 D1 数据库替代 KV 存储，需要先创建并绑定数据库：
 
 如果你从 v1.0 升级到 v2.0，需要将 KV 数据迁移到 D1 数据库。
 
-#### 自动迁移（推荐）
+#### 快速迁移
 
-1. **访问管理后台**
-   - 打开 `https://你的域名/admin.html`
-   - 使用 `BASIC_USER` 和 `BASIC_PASS` 登录
+浏览器访问（替换域名和 JWT_SECRET）：
+```
+https://你的域名/api/v4/admin/init-db?token=你的JWT_SECRET&action=init
+```
 
-2. **打开迁移工具**
-   - 点击页面右上角的工具箱图标
-   - 选择"数据库迁移"
+#### JWT 鉴权说明
 
-3. **查看迁移状态**
-   - 系统会自动检测是否需要迁移
-   - 显示当前数据库统计信息
+部分管理 API 端点需要 JWT 鉴权：
 
-4. **执行迁移**
-   - 点击"开始迁移"按钮
-   - 等待迁移完成
-   - 查看迁移结果报告
+| 环境变量 | 说明 |
+|---------|------|
+| `JWT_SECRET` | API 密钥，为空则受保护端点返回 503 |
 
-#### 手动迁移（高级）
-
-也可以使用 API 进行迁移：
+**使用方式：**
 
 ```bash
-# 查看迁移状态
-curl -X GET https://你的域名/api/admin/migrate \
-  -u admin:password
+# URL 参数
+https://域名/api/v4/admin/init-db?token=你的JWT_SECRET
 
-# 执行迁移
-curl -X POST https://你的域名/api/admin/migrate \
-  -u admin:password \
-  -H "Content-Type: application/json" \
-  -d '{}'
+# 请求头
+curl -H "Authorization: Bearer 你的JWT_SECRET" https://域名/api/v4/admin/init-db
 ```
+
+#### 数据库管理 API
+
+| 端点 | 说明 |
+|------|------|
+| `/api/v4/admin/init-db` | 查看数据库状态 |
+| `/api/v4/admin/init-db?action=init` | 初始化表结构并执行迁移 |
 
 **详细迁移说明**：
 - [Cloudflare Pages 迁移指南](docs/migration-cloudflare.md)
