@@ -54,7 +54,7 @@ export async function onRequestGet(context) {
 
     const offset = (page - 1) * pageSize;
     const fileRows = await env.DB.prepare(
-      'SELECT * FROM files WHERE folder_path = ? ORDER BY created_at DESC LIMIT ? OFFSET ?'
+      'SELECT id, file_name, folder_path, file_size, created_at, updated_at FROM files WHERE folder_path = ? ORDER BY created_at DESC LIMIT ? OFFSET ?'
     ).bind(folderPath, pageSize, offset).all();
 
     const files = (fileRows.results || []).map(row => ({
@@ -74,7 +74,7 @@ export async function onRequestGet(context) {
     ).bind(folderPath || '/').first();
 
     const folderRows = await env.DB.prepare(
-      "SELECT * FROM folders WHERE parent_id = ? ORDER BY name ASC"
+      "SELECT id, name, path, created_at, updated_at FROM folders WHERE parent_id = ? ORDER BY name ASC"
     ).bind(parentRow?.id || '').all();
 
     const folders = (folderRows.results || []).map(row => ({

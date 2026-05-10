@@ -1,3 +1,5 @@
+import { addToUsedCapacity } from '../../../../../utils/capacity.js';
+
 function cloudreveSuccess(data) {
   return new Response(JSON.stringify({ code: 0, data }), {
     status: 200,
@@ -112,6 +114,8 @@ export async function onRequestPost(context) {
     }
 
     await env.img_url.delete('tmp:sess:' + sessionID);
+
+    await addToUsedCapacity(env, fileData.byteLength);
 
     return cloudreveSuccess({
       uploaded: true,

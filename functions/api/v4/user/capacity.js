@@ -2,6 +2,8 @@
  * v4 API - 用户容量
  */
 
+import { getCachedUsedCapacity, rebuildCapacityCache } from '../../utils/capacity.js';
+
 function parseStorageCapacity(value) {
   if (!value) return null;
   
@@ -51,14 +53,21 @@ export async function onRequestGet(context) {
   const totalCapacity = capacity !== null ? capacity : 114 * 1024 ** 4;
 
   let used = 0;
-  if (env.DB) {
+  if (env.img_url) {
+    const cached = await getCachedUsedCapacity(env);
+    if (cached !== null) {
+      used = cached;
+    } else if (env.DB) {
+      used = await rebuildCapacityCache(env);
+    }
+  } else if (env.DB) {
     try {
       const result = await env.DB.prepare(
         'SELECT COALESCE(SUM(file_size), 0) as used FROM files'
       ).first();
       used = Number(result?.used || 0);
     } catch (e) {
-      // ignore db error, fallback to 0
+      // ignore
     }
   }
 

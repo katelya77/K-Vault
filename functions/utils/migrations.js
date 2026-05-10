@@ -17,6 +17,22 @@ const MIGRATIONS = [
     migrate: async (db) => {
       await db.prepare('ALTER TABLE files ADD COLUMN physical_file_name TEXT').run();
     }
+  },
+  {
+    version: 2,
+    name: 'add_performance_indexes',
+    description: '添加性能索引：files.folder_path, files.created_at, folders.parent_id',
+    check: async (db) => {
+      const result = await db.prepare(
+        "SELECT COUNT(*) as count FROM pragma_index_list('files') WHERE name='idx_files_folder_path'"
+      ).first();
+      return result?.count > 0;
+    },
+    migrate: async (db) => {
+      await db.prepare("CREATE INDEX IF NOT EXISTS idx_files_folder_path ON files(folder_path)").run();
+      await db.prepare("CREATE INDEX IF NOT EXISTS idx_files_created_at ON files(created_at)").run();
+      await db.prepare("CREATE INDEX IF NOT EXISTS idx_folders_parent_id ON folders(parent_id)").run();
+    }
   }
 ];
 
