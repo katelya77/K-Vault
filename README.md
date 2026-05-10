@@ -150,6 +150,9 @@
 | `TG_Chat_ID` | Telegram 频道 ID | ✅ |
 | `BASIC_USER` | 管理后台用户名 | 可选 |
 | `BASIC_PASS` | 管理后台密码 | 可选 |
+| `ADMIN_EMAIL` | 管理员邮箱（可用邮箱登录） | 可选 |
+| `ALLOW_MEMORY_SESSION` | 允许内存会话存储（仅本地开发） | 可选 |
+| `STORAGE_TOTAL_CAPACITY` | 总存储容量（支持 TB/GB/MB/KB/B，默认 114TB） | 可选 |
 
 **重新部署** - 修改环境变量后需重新部署生效
 
@@ -768,7 +771,6 @@ curl -X POST "http://127.0.0.1:8081/bot<YOUR_BOT_TOKEN>/setWebhook" \
 | `TG_UPLOAD_NOTIFY` | 网页上传成功后发送“直链+File ID”通知消息 | `true` |
 | `FILE_URL_SECRET` | 签名直链密钥（也兼容 `TG_FILE_URL_SECRET`） | `TG_Bot_Token` |
 | `CHUNK_BACKEND` | 分片临时存储后端（`auto`/`r2`/`kv`） | `auto` |
-| `disable_telemetry` | 禁用遥测 | - |
 
 ### Docker 运行时变量（自托管模式）
 
@@ -851,6 +853,9 @@ curl -X POST "http://127.0.0.1:8081/bot<YOUR_BOT_TOKEN>/setWebhook" \
 | `TG_FILE_URL_SECRET` | 同上（兼容变量名） | 可选 |
 | `BASIC_USER` | 管理后台用户名 | 可选 |
 | `BASIC_PASS` | 管理后台密码 | 可选 |
+| `ADMIN_EMAIL` | 管理员邮箱（可用邮箱登录） | 可选 |
+| `ALLOW_MEMORY_SESSION` | 允许内存会话存储（仅本地开发） | 可选 |
+| `STORAGE_TOTAL_CAPACITY` | 总存储容量（支持 TB/GB/MB/KB/B，默认 114TB） | 可选 |
 | `USE_R2` | 启用 R2 存储 | 可选 |
 | `CHUNK_BACKEND` | 分片临时存储后端（`auto`/`r2`/`kv`） | 可选 |
 | `S3_ENDPOINT` | S3 端点 URL | 可选 |
@@ -881,7 +886,6 @@ curl -X POST "http://127.0.0.1:8081/bot<YOUR_BOT_TOKEN>/setWebhook" \
 | `GUEST_DAILY_LIMIT` | 访客每日上传次数 | 可选 |
 | `ModerateContentApiKey` | 图片审核 API Key | 可选 |
 | `WhiteList_Mode` | 白名单模式 | 可选 |
-| `disable_telemetry` | 禁用遥测 | 可选 |
 | `PORT` | Docker 自托管模式 API 端口 | 可选 |
 | `DATA_DIR` | Docker 自托管模式数据目录 | 可选 |
 | `DB_PATH` | Docker 自托管模式 SQLite 路径 | 可选 |

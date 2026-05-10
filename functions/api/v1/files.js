@@ -1,4 +1,4 @@
-import { onRequest as listFilesInternal } from '../manage/list.js';
+import { onRequestGet as listFilesInternal } from '../manage/list.js';
 import { apiError, apiSuccess } from '../../utils/api-v1.js';
 
 function normalizeStorageType(name = '', metadata = {}) {

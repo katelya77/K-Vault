@@ -3,7 +3,16 @@
  * 支持 D1 (Cloudflare Pages) 和 SQLite (Docker)
  */
 
-import { debugLog, debugError } from '../../functions/utils/debug.js';
+let debugLog, debugError;
+
+try {
+  const debugModule = await import('../../functions/utils/debug.js');
+  debugLog = debugModule.debugLog;
+  debugError = debugModule.debugError;
+} catch (e) {
+  debugLog = () => {};
+  debugError = () => {};
+}
 
 export class DatabaseClient {
   constructor(db) {

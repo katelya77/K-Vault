@@ -411,7 +411,6 @@ Allows non-logged-in users to upload files. Site owners can configure whether it
 | `TG_UPLOAD_NOTIFY` | Send "direct link + File ID" notification after web upload succeeds | `true` |
 | `FILE_URL_SECRET` | Signed direct-link secret (also compatible with `TG_FILE_URL_SECRET`) | `TG_Bot_Token` |
 | `CHUNK_BACKEND` | Chunk temporary storage backend (`auto`/`r2`/`kv`) | `auto` |
-| `disable_telemetry` | Disable telemetry | - |
 
 ### Docker Runtime Variables (Self-host Mode)
 
@@ -509,7 +508,6 @@ Allows non-logged-in users to upload files. Site owners can configure whether it
 | `GUEST_DAILY_LIMIT` | Guest daily upload count | Optional |
 | `ModerateContentApiKey` | Image moderation API key | Optional |
 | `WhiteList_Mode` | Whitelist mode | Optional |
-| `disable_telemetry` | Disable telemetry | Optional |
 | `PORT` | API port in Docker self-host mode | Optional |
 | `DATA_DIR` | Data directory in Docker self-host mode | Optional |
 | `DB_PATH` | SQLite database path in Docker self-host mode | Optional |

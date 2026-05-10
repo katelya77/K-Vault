@@ -1,4 +1,3 @@
-import { errorHandling, telemetryData } from "./utils/middleware";
 import { checkAuthentication, isAuthRequired } from "./utils/auth.js";
 import { checkGuestUpload, incrementGuestCount } from "./utils/guest.js";
 import { createS3Client } from "./utils/s3client.js";
@@ -86,9 +85,6 @@ export async function onRequestPost(context) {
   try {
     const clonedRequest = request.clone();
     const formData = await clonedRequest.formData();
-
-    await errorHandling(context);
-    telemetryData(context);
 
     const uploadFile = formData.get("file");
     if (!uploadFile) {

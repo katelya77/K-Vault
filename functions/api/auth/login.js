@@ -1,6 +1,7 @@
 /**
  * 登录 API
  * POST /api/auth/login
+ * 支持用户名和邮箱登录
  */
 import { 
   createSession, 
@@ -25,22 +26,34 @@ export async function onRequestPost(context) {
 
     const body = await request.json();
     const username = String(body?.username ?? body?.user ?? '').trim();
+    const email = String(body?.email ?? '').trim();
     const password = String(body?.password ?? body?.pass ?? '');
 
-    if (!username || password === '') {
+    // 支持用户名或邮箱登录
+    const loginIdentifier = username || email;
+
+    if (!loginIdentifier || password === '') {
       return new Response(JSON.stringify({
         success: false,
-        message: 'Missing username or password.'
+        message: 'Missing username/email or password.'
       }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' }
       });
     }
 
-    // 验证凭据
-    if (username === env.BASIC_USER && password === env.BASIC_PASS) {
+    // 获取配置的用户名和邮箱
+    const configuredUsername = env.BASIC_USER || '';
+    const configuredEmail = env.ADMIN_EMAIL || '';
+
+    // 验证凭据（支持用户名或邮箱）
+    const isValidUser = loginIdentifier === configuredUsername || 
+                        (configuredEmail && loginIdentifier === configuredEmail);
+    const isValidPassword = password === env.BASIC_PASS;
+
+    if (isValidUser && isValidPassword) {
       // 创建会话
-      const sessionToken = await createSession(username, env);
+      const sessionToken = await createSession(configuredUsername, env);
       
       return new Response(JSON.stringify({ 
         success: true, 
@@ -55,7 +68,7 @@ export async function onRequestPost(context) {
 
     return new Response(JSON.stringify({ 
       success: false, 
-      message: '用户名或密码错误' 
+      message: '用户名/邮箱或密码错误' 
     }), {
       status: 401,
       headers: { 'Content-Type': 'application/json' }

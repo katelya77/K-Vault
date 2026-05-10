@@ -1,0 +1,9 @@
+server/
+scripts/
+frontend-v2/
+frontend-v3/
+node_modules/
+.git/
+.github/
+demo/
+_nuxt/

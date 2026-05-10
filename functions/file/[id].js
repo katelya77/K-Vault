@@ -156,11 +156,6 @@ function inferStorageType(name, metadata = {}) {
   return 'telegram';
 }
 
-function getMimeType(fileName = '') {
-  const ext = String(fileName).split('.').pop()?.toLowerCase() || '';
-  return MIME_TYPES[ext] || 'application/octet-stream';
-}
-
 function addCorsHeaders(headers) {
   headers.set('Access-Control-Allow-Origin', '*');
   headers.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
