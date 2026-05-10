@@ -1,0 +1,3 @@
+[submodule "frontend-v3"]
+	path = frontend-v3
+	url = https://github.com/cloudreve/frontend
