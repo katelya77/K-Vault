@@ -8,6 +8,7 @@ const PUBLIC_PATHS = [
   '/api/v4/session/token',
   '/api/v4/session/token/refresh',
   '/api/v4/session/token/2fa',
+  '/api/v4/session/prepare',
   '/api/v4/site/config/explorer',
   '/api/v4/site/captcha',
 ];
@@ -22,6 +23,15 @@ function addCorsHeaders(headers) {
   headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
   headers.set('Access-Control-Max-Age', '86400');
   return headers;
+}
+
+function jsonResponse(body, status = 200) {
+  const headers = new Headers({
+    'Content-Type': 'application/json',
+    'Cache-Control': 'no-store',
+  });
+  addCorsHeaders(headers);
+  return new Response(JSON.stringify(body), { status, headers });
 }
 
 export async function onRequest(context) {
@@ -39,13 +49,7 @@ export async function onRequest(context) {
     if (isAuthRequired(context.env)) {
       const authResult = await checkAuthentication(context);
       if (!authResult.authenticated) {
-        return new Response(JSON.stringify({ code: 401, msg: '请先登录', error: 'Login required' }), {
-          status: 401,
-          headers: {
-            'Content-Type': 'application/json',
-            'Cache-Control': 'no-store',
-          },
-        });
+        return jsonResponse({ code: 401, msg: '请先登录', error: 'Login required' }, 401);
       }
     }
   }
