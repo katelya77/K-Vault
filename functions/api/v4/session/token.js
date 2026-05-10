@@ -6,6 +6,8 @@
 import {
   createSession,
   createSessionCookieHeader,
+  createClearSessionCookieHeader,
+  deleteSession,
   isAuthRequired
 } from '../../../utils/auth.js';
 
@@ -116,5 +118,30 @@ export async function onRequestPost(context) {
   } catch (error) {
     console.error('Login error:', error);
     return cloudreveError(500, 'Login failed: ' + error.message);
+  }
+}
+
+export async function onRequestDelete(context) {
+  const { request, env } = context;
+
+  try {
+    const body = await request.json();
+    const refreshToken = body?.refresh_token || body?.access_token;
+
+    if (refreshToken) {
+      await deleteSession(refreshToken, env);
+    }
+
+    const response = cloudreveSuccess({});
+    const newHeaders = new Headers(response.headers);
+    newHeaders.set('Set-Cookie', createClearSessionCookieHeader());
+
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: newHeaders,
+    });
+  } catch (error) {
+    return cloudreveSuccess({});
   }
 }

@@ -13,5 +13,3 @@ id = "local-kv"
 binding = "DB"
 database_name = "k-vault-db"
 database_id = "local-d1"
-
-
