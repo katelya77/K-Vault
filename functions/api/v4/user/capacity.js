@@ -2,7 +2,7 @@
  * v4 API - 用户容量
  */
 
-import { getCachedUsedCapacity, rebuildCapacityCache } from '../../utils/capacity.js';
+import { getCachedUsedCapacity, rebuildCapacityCache } from '../../../utils/capacity.js';
 
 function parseStorageCapacity(value) {
   if (!value) return null;

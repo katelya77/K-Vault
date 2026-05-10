@@ -1,5 +1,3 @@
-import { addToUsedCapacity } from '../../../../../utils/capacity.js';
-
 function cloudreveSuccess(data) {
   return new Response(JSON.stringify({ code: 0, data }), {
     status: 200,
@@ -115,7 +113,16 @@ export async function onRequestPost(context) {
 
     await env.img_url.delete('tmp:sess:' + sessionID);
 
-    await addToUsedCapacity(env, fileData.byteLength);
+    if (env.img_url && fileData.byteLength > 0) {
+      try {
+        const cached = await env.img_url.get('capacity:used');
+        if (cached !== null) {
+          await env.img_url.put('capacity:used', String(parseInt(cached, 10) + fileData.byteLength));
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
 
     return cloudreveSuccess({
       uploaded: true,
