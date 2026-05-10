@@ -8,8 +8,8 @@
  * POST - 初始化数据库并执行迁移
  */
 
-import { ensureTablesExist, runAutoMigrations } from '../../utils/migrations.js';
-import { requireJwtAuth, createJwtAuthResponse } from '../../utils/jwt-auth.js';
+import { ensureTablesExist, runAutoMigrations } from '../../../utils/migrations.js';
+import { requireJwtAuth, createJwtAuthResponse } from '../../../utils/jwt-auth.js';
 
 export async function onRequestGet(context) {
   const { env } = context;
