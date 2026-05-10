@@ -1,3 +1,5 @@
+import { verifyDownloadToken, verifySession, getSessionFromCookie, getBearerToken } from '../../../../utils/auth.js';
+
 function errorResponse(msg, status = 404) {
   return new Response(JSON.stringify({ code: status, msg, error: msg }), {
     status,
@@ -32,6 +34,32 @@ export async function onRequestGet(context) {
 
   if (!env.DB) {
     return errorResponse('D1 (DB) 未绑定', 500);
+  }
+
+  if (env.BASIC_USER && env.BASIC_PASS) {
+    const url = new URL(context.request.url);
+    const dlToken = url.searchParams.get('dl_token');
+    const expires = url.searchParams.get('expires');
+
+    let authorized = false;
+
+    if (dlToken && expires && env.JWT_SECRET) {
+      authorized = await verifyDownloadToken(fileId, dlToken, expires, env.JWT_SECRET);
+    }
+
+    if (!authorized) {
+      const sessionToken = getSessionFromCookie(context.request) || getBearerToken(context.request);
+      if (sessionToken) {
+        authorized = await verifySession(sessionToken, env);
+      }
+    }
+
+    if (!authorized) {
+      return new Response(JSON.stringify({ code: 401, msg: '请先登录', error: 'Login required' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+      });
+    }
   }
 
   try {

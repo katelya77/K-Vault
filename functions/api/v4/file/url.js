@@ -1,3 +1,5 @@
+import { generateDownloadToken } from '../../../utils/auth.js';
+
 function cloudreveSuccess(data) {
   return new Response(JSON.stringify({ code: 0, data }), {
     status: 200,
@@ -55,7 +57,11 @@ export async function onRequestPost(context) {
       }
 
       if (row) {
-        const fileUrl = baseUrl + '/api/v4/file/get/' + row.id;
+        let fileUrl = baseUrl + '/api/v4/file/get/' + row.id;
+        if (env.JWT_SECRET) {
+          const dlToken = await generateDownloadToken(row.id, row.file_size || 0, env.JWT_SECRET);
+          fileUrl += `?dl_token=${dlToken.token}&expires=${dlToken.expires}`;
+        }
         results.push({
           url: fileUrl,
           name: row.file_name,

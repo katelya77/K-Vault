@@ -9,6 +9,7 @@ const PUBLIC_PATHS = [
   '/api/v4/session/token/refresh',
   '/api/v4/session/token/2fa',
   '/api/v4/session/prepare',
+  '/api/v4/file/get',
   '/api/v4/site/config/explorer',
   '/api/v4/site/captcha',
 ];
