@@ -9,6 +9,11 @@ MODE = "cloudflare"
 binding = "img_url"
 id = "local-kv"
 
+[[d1_databases]]
+binding = "DB"
+database_name = "k-vault-db"
+database_id = "local-d1"
+
 [[rules]]
 type = "ESModule"
 globs = ["**/*.js"]

@@ -157,18 +157,18 @@ export async function deleteSession(sessionToken, env) {
  * 创建带会话 Cookie 的响应
  */
 export function createSessionCookieHeader(token, maxAge = SESSION_DURATION / 1000) {
-  return `${SESSION_COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}`;
+  return `${SESSION_COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=None; Secure; Max-Age=${maxAge}`;
 }
 
 /**
  * 创建清除会话 Cookie 的响应头
  */
 export function createClearSessionCookieHeader() {
-  return `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0`;
+  return `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=None; Secure; Max-Age=0`;
 }
 
 export function createLegacyClearSessionCookieHeader() {
-  return `${LEGACY_SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0`;
+  return `${LEGACY_SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=None; Secure; Max-Age=0`;
 }
 
 /**
