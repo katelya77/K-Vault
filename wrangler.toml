@@ -14,7 +14,4 @@ binding = "DB"
 database_name = "k-vault-db"
 database_id = "local-d1"
 
-[[rules]]
-type = "ESModule"
-globs = ["**/*.js"]
-fallthrough = true
+

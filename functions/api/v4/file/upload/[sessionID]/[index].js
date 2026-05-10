@@ -1,9 +1,126 @@
+function cloudreveSuccess(data) {
+  return new Response(JSON.stringify({ code: 0, data }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+  });
+}
+
+function errorResponse(msg, status = 400) {
+  return new Response(JSON.stringify({ code: status, msg, error: msg }), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+function parseFolderPath(raw) {
+  if (!raw || raw === '/') return '';
+  if (!raw.startsWith('cloudreve://')) {
+    const normalized = raw.replace(/\/+$/, '');
+    const lastSlash = normalized.lastIndexOf('/');
+    return lastSlash <= 0 ? '' : normalized.substring(0, lastSlash);
+  }
+  const rest = raw.slice('cloudreve://'.length);
+  const idx = rest.indexOf('/');
+  if (idx === -1) return '';
+  const pathPart = rest.slice(idx).replace(/\/+$/, '');
+  const lastSlash = pathPart.lastIndexOf('/');
+  return lastSlash <= 0 ? '' : pathPart.substring(0, lastSlash);
+}
+
 export async function onRequestPost(context) {
-  return new Response(
-    JSON.stringify({ code: 0, data: { uploaded: true } }),
-    {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
+  const { env, request, params } = context;
+  const sessionID = params.sessionID;
+
+  if (!sessionID) {
+    return errorResponse('缺少 sessionID', 400);
+  }
+
+  if (!env.img_url) {
+    return errorResponse('KV (img_url) 未绑定', 500);
+  }
+
+  if (!env.DB) {
+    return errorResponse('D1 (DB) 未绑定', 500);
+  }
+
+  try {
+    const sessionRaw = await env.img_url.get('tmp:sess:' + sessionID);
+    if (!sessionRaw) {
+      return errorResponse('上传会话不存在或已过期', 404);
     }
-  );
+
+    const session = JSON.parse(sessionRaw);
+    const fileData = await request.arrayBuffer();
+
+    if (!fileData || fileData.byteLength === 0) {
+      return errorResponse('未接收到文件数据', 400);
+    }
+
+    const now = Date.now();
+    const fileId = crypto.randomUUID();
+    const folderPath = parseFolderPath(session.uri);
+    const storageKey = 'tmp:file:' + sessionID;
+
+    await env.img_url.put(storageKey, fileData, {
+      expirationTtl: 604800,
+    });
+
+    const mime = session.mime_type || '';
+    const ext = session.file_name.includes('.') ? session.file_name.split('.').pop() : '';
+
+    let listType = 'None';
+    const imgExts = ['jpg','jpeg','png','gif','webp','bmp','svg','ico','tiff','tif','avif','heic','heif'];
+    const vidExts = ['mp4','webm','mkv','avi','mov','wmv','flv','m4v','3gp','ogv'];
+    const audExts = ['mp3','wav','ogg','flac','aac','wma','m4a','opus','ac3','mid','midi'];
+    const docExts = ['pdf','doc','docx','xls','xlsx','ppt','pptx','txt','md','csv','json','xml','yaml','yml','html','htm','css','js','ts','py','java','c','cpp','h','hpp','sh','bat','ps1','epub','mobi','azw3','fb2'];
+
+    if (imgExts.includes(ext)) listType = 'Image';
+    else if (vidExts.includes(ext)) listType = 'Video';
+    else if (audExts.includes(ext)) listType = 'Audio';
+    else if (docExts.includes(ext)) listType = 'Document';
+
+    const maxRetries = 3;
+    let lastError = null;
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        await env.DB.prepare(
+          "INSERT OR IGNORE INTO files (id, storage_config_id, storage_type, storage_key, storage_file_id, file_name, physical_file_name, file_size, mime_type, folder_id, folder_path, list_type, label, liked, extra_json, created_at, updated_at) VALUES (?, 'default', 'kv', ?, '', ?, '', ?, ?, '', ?, ?, ?, 0, '{}', ?, ?)"
+        ).bind(
+          fileId,
+          storageKey,
+          session.file_name,
+          fileData.byteLength,
+          mime,
+          folderPath,
+          listType,
+          'None',
+          now,
+          now,
+        ).run();
+        lastError = null;
+        break;
+      } catch (dbErr) {
+        lastError = dbErr;
+        if (attempt < maxRetries - 1) {
+          await new Promise(r => setTimeout(r, 200));
+        }
+      }
+    }
+
+    if (lastError) {
+      return errorResponse('写入数据库失败: ' + lastError.message, 500);
+    }
+
+    await env.img_url.delete('tmp:sess:' + sessionID);
+
+    return cloudreveSuccess({
+      uploaded: true,
+      etag: fileId,
+      file_id: fileId,
+      name: session.file_name,
+      size: fileData.byteLength,
+    });
+  } catch (error) {
+    return errorResponse('上传处理失败: ' + error.message, 500);
+  }
 }
