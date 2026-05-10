@@ -59,9 +59,9 @@ function handleLogout() {
             </div>
             <ul 
               tabindex="0" 
-              class="dropdown-content z-[1] menu p-2 shadow-lg bg-base-100 rounded-box w-52 border border-base-300 dropdown-menu"
+              class="dropdown-content z-[1] menu p-2 shadow-lg bg-base-100 rounded-box w-40 border border-base-300 dropdown-menu"
             >
-              <li><a @click="handleLogout">退出登录</a></li>
+              <li><a class="whitespace-nowrap" @click="handleLogout">退出登录</a></li>
             </ul>
           </div>
         </div>
@@ -119,17 +119,28 @@ function handleLogout() {
   }
 }
 
-.menu {
+.menu:not(.dropdown-menu) {
   width: 100%;
 }
 
-.menu li {
+.menu:not(.dropdown-menu) li {
   width: 100%;
 }
 
-.menu li a {
+.menu:not(.dropdown-menu) li a {
   width: 100%;
   display: flex;
   border-radius: 0.5rem;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.menu:not(.dropdown-menu) li a.router-link-active,
+.menu:not(.dropdown-menu) li a.active {
+  font-weight: 700;
+}
+
+.menu:not(.dropdown-menu) li a:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 6px -1px oklch(var(--bc) / 0.1);
 }
 </style>
