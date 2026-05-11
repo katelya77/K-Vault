@@ -1,7 +1,3 @@
-/**
- * v4 API - 获取当前用户信息
- */
-
 import { verifySession } from '../../../utils/auth.js';
 
 function generateAdminPermission() {
@@ -49,29 +45,37 @@ function cloudreveError(code, message) {
   );
 }
 
+async function checkAuth(request, env) {
+  const authHeader = request.headers.get('Authorization');
+  if (!authHeader) return false;
+  const token = authHeader.replace('Bearer ', '');
+  return await verifySession(token, env);
+}
+
+async function getProfile(env) {
+  const stored = await env.img_url.get('user:profile', { type: 'json' });
+  const configuredUsername = env.BASIC_USER || 'admin';
+  const configuredEmail = env.ADMIN_EMAIL || '';
+  return {
+    nickname: stored?.nickname || configuredUsername,
+    email: stored?.email || configuredEmail || `${configuredUsername}@localhost`,
+  };
+}
+
 export async function onRequestGet(context) {
   const { request, env } = context;
 
   try {
-    const authHeader = request.headers.get('Authorization');
-    if (!authHeader) {
-      return cloudreveError(40020, 'Not authenticated');
-    }
-
-    const token = authHeader.replace('Bearer ', '');
-    const isValid = await verifySession(token, env);
-
-    if (!isValid) {
+    if (!(await checkAuth(request, env))) {
       return cloudreveError(40020, 'Invalid session');
     }
 
-    const configuredUsername = env.BASIC_USER || 'admin';
-    const configuredEmail = env.ADMIN_EMAIL || '';
+    const profile = await getProfile(env);
 
     return cloudreveSuccess({
       id: '1',
-      email: configuredEmail || `${configuredUsername}@localhost`,
-      nickname: configuredUsername,
+      email: profile.email,
+      nickname: profile.nickname,
       created_at: new Date().toISOString(),
       group: {
         id: 'admin',
@@ -79,9 +83,36 @@ export async function onRequestGet(context) {
         permission: generateAdminPermission(),
       },
     });
-
   } catch (error) {
     console.error('Get user error:', error);
     return cloudreveError(500, 'Failed to get user info');
+  }
+}
+
+export async function onRequestPut(context) {
+  const { request, env } = context;
+
+  try {
+    if (!(await checkAuth(request, env))) {
+      return cloudreveError(40020, 'Invalid session');
+    }
+
+    const body = await request.json();
+    const current = await env.img_url.get('user:profile', { type: 'json' }) || {};
+
+    if (body.nickname !== undefined) current.nickname = body.nickname;
+    if (body.email !== undefined) current.email = body.email;
+
+    await env.img_url.put('user:profile', JSON.stringify(current));
+
+    return cloudreveSuccess({
+      id: '1',
+      email: current.email || '',
+      nickname: current.nickname || '',
+      updated_at: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('Update user error:', error);
+    return cloudreveError(500, 'Failed to update user info');
   }
 }

@@ -1,12 +1,26 @@
-/**
- * v4 API - 管理员设置
- */
+import { verifySession } from '../../../utils/auth.js';
 
 function cloudreveSuccess(data) {
   return new Response(
     JSON.stringify({
       code: 0,
       data: data,
+    }),
+    {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'no-store',
+      },
+    }
+  );
+}
+
+function cloudreveError(code, message) {
+  return new Response(
+    JSON.stringify({
+      code: code,
+      msg: message,
     }),
     {
       status: 200,
@@ -69,21 +83,66 @@ const DEFAULT_SETTINGS = {
   refresh_token_ttl: '604800',
 };
 
+async function checkAuth(request, env) {
+  const authHeader = request.headers.get('Authorization');
+  if (!authHeader) return false;
+  const token = authHeader.replace('Bearer ', '');
+  return await verifySession(token, env);
+}
+
+async function getAllSettings(env) {
+  const stored = await env.img_url.get('admin:settings', { type: 'json' });
+  return { ...DEFAULT_SETTINGS, ...(stored || {}) };
+}
+
 export async function onRequestPost(context) {
-  const { request } = context;
+  const { request, env } = context;
 
   try {
+    if (!(await checkAuth(request, env))) {
+      return cloudreveError(40020, 'Invalid session');
+    }
+
     const body = await request.json();
     const keys = body?.keys || [];
+    const all = await getAllSettings(env);
 
     const result = {};
     for (const key of keys) {
-      result[key] = DEFAULT_SETTINGS[key] || '';
+      result[key] = all[key] !== undefined ? all[key] : '';
     }
 
     return cloudreveSuccess(result);
   } catch (error) {
     console.error('Get settings error:', error);
     return cloudreveSuccess({});
+  }
+}
+
+export async function onRequestPatch(context) {
+  const { request, env } = context;
+
+  try {
+    if (!(await checkAuth(request, env))) {
+      return cloudreveError(40020, 'Invalid session');
+    }
+
+    const body = await request.json();
+    const updates = body?.settings || body || {};
+
+    const current = await getAllSettings(env);
+
+    for (const key of Object.keys(updates)) {
+      if (key in DEFAULT_SETTINGS) {
+        current[key] = String(updates[key]);
+      }
+    }
+
+    await env.img_url.put('admin:settings', JSON.stringify(current));
+
+    return cloudreveSuccess({});
+  } catch (error) {
+    console.error('Update settings error:', error);
+    return cloudreveError(500, 'Failed to update settings');
   }
 }
