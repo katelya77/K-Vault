@@ -1,4 +1,4 @@
-import { invalidateStorageHealth } from '../../../../../utils/storage-health.js';
+import { invalidateStorageHealth, getStorageHealth } from '../../../../../utils/storage-health.js';
 
 function cloudreveSuccess(data) {
   return new Response(JSON.stringify({ code: 0, data }), {
@@ -79,7 +79,15 @@ export async function onRequestPost(context) {
     const ext = session.file_name.includes('.') ? session.file_name.split('.').pop().toLowerCase() : '';
     const listType = getListType(ext);
 
-    const useTelegram = (session.channel === 'telegram' || (!session.channel && env.TG_Bot_Token && env.TG_Chat_ID));
+    const channel = session.channel || 'telegram';
+
+    const health = await getStorageHealth(env);
+    const channelStatus = health.results[channel];
+    if (!channelStatus || !channelStatus.connected) {
+      return errorResponse(`存储渠道不可用: ${channel}`, 503);
+    }
+
+    const useTelegram = (channel === 'telegram');
 
     let storageType = 'd1';
     let storageKey = '';
