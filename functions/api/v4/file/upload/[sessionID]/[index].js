@@ -214,6 +214,7 @@ export async function onRequestPost(context) {
             `下载链接: ${directLink}`,
             `文件ID: ${tgFileId}`,
             `消息ID: ${tgMessageId}`,
+            ...(userId ? [`上传者: ${userId}`] : []),
           ].join('\n'),
         },
         env,
