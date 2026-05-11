@@ -23,6 +23,18 @@ export async function onRequestGet(context) {
   const url = new URL(context.request.url);
   const generate = url.searchParams.get('generate') === 'true';
   
+  let siteUrls = [url.origin];
+  if (env.DB) {
+    try {
+      const row = await env.DB.prepare("SELECT value FROM config WHERE key = 'siteURL'").first();
+      if (row?.value) {
+        siteUrls = row.value.split(',').map(s => s.trim()).filter(Boolean);
+      }
+    } catch {
+      // ignore
+    }
+  }
+  
   let metricsSummary = undefined;
   
   if (generate && env.DB) {
@@ -67,7 +79,7 @@ export async function onRequestGet(context) {
       commit: 'k-vault',
       pro: true,
     },
-    site_urls: [url.origin],
+    site_urls: siteUrls,
     metrics_summary: metricsSummary,
   });
 }
