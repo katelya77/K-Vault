@@ -1,5 +1,5 @@
 import { invalidateStorageHealth, getStorageHealth } from '../../../../../utils/storage-health.js';
-import { buildTelegramBotApiUrl, getTelegramUploadMethodAndField, pickTelegramFileId } from '../../../../../utils/telegram.js';
+import { buildTelegramBotApiUrl, getTelegramUploadMethodAndField, pickTelegramFileId, buildTelegramDirectLink, sendTelegramUploadNotice } from '../../../../../utils/telegram.js';
 
 function cloudreveSuccess(data) {
   return new Response(JSON.stringify({ code: 0, data }), {
@@ -93,6 +93,7 @@ export async function onRequestPost(context) {
     let storageType = 'd1';
     let storageKey = '';
     let tgFileId = '';
+    let tgData;
 
     if (useTelegram) {
 
@@ -113,7 +114,7 @@ export async function onRequestPost(context) {
         return errorResponse('Telegram 上传失败: ' + (errBody.description || tgResp.statusText), 500);
       }
 
-      const tgData = await tgResp.json();
+      tgData = await tgResp.json();
       tgFileId = pickTelegramFileId(tgData);
 
       if (!tgFileId) {
@@ -123,6 +124,11 @@ export async function onRequestPost(context) {
 
       storageType = 'telegram';
       storageKey = tgFileId;
+    }
+
+    let tgMessageId;
+    if (useTelegram && tgData?.result?.message_id) {
+      tgMessageId = tgData.result.message_id;
     }
 
     const maxRetries = 3;
@@ -172,6 +178,29 @@ export async function onRequestPost(context) {
 
     if (lastError) {
       return errorResponse('写入数据库失败: ' + lastError.message, 500);
+    }
+
+    if (useTelegram) {
+      const directLink = buildTelegramDirectLink(env, tgFileId);
+      await sendTelegramUploadNotice(
+        {
+          chatId: env.TG_Chat_ID,
+          replyToMessageId: tgMessageId,
+          directLink,
+          fileId: tgFileId,
+          messageId: tgMessageId,
+          fileName: session.file_name,
+          fileSize: fileData.byteLength,
+          text: [
+            `名称: ${session.file_name}`,
+            `大小: ${(fileData.byteLength / 1024).toFixed(2)} KB`,
+            `下载链接: ${directLink}`,
+            `文件ID: ${tgFileId}`,
+            `消息ID: ${tgMessageId}`,
+          ].join('\n'),
+        },
+        env,
+      );
     }
 
     await env.img_url.delete('tmp:sess:' + sessionID);
