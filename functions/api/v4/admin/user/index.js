@@ -64,7 +64,7 @@ export async function onRequestPost(context) {
     ).bind(...bindValues, page_size, offset).all();
 
     const users = (rows.results || []).map(row => ({
-      id: parseInt(row.id, 10) || 0,
+      id: row.id,
       nick: row.nickname || '',
       email: row.email || '',
       group: row.group || 'user',
@@ -96,7 +96,7 @@ export async function onRequestPut(context) {
     }
 
     const now = Date.now();
-    const id = String(now);
+    const id = crypto.randomUUID();
     const nickname = userData.nick || userData.nickname || '';
     const email = userData.email || '';
     const password = body.password || '';
@@ -114,7 +114,7 @@ export async function onRequestPut(context) {
     ).bind(id, nickname, email, pwd, userGroup, status, storage_capacity, now, now).run();
 
     return cloudreveSuccess({
-      id: parseInt(id, 10),
+      id: id,
       nick: nickname,
       email,
       group: userGroup,

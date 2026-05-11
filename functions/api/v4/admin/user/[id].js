@@ -31,7 +31,7 @@ export async function onRequestGet(context) {
     }
 
     return cloudreveSuccess({
-      id: parseInt(row.id, 10) || 0,
+      id: row.id,
       nick: row.nickname || '',
       email: row.email || '',
       group: row.group || 'user',
@@ -111,7 +111,7 @@ export async function onRequestPut(context) {
     ).bind(id).first();
 
     return cloudreveSuccess({
-      id: parseInt(updated.id, 10) || 0,
+      id: updated.id,
       nick: updated.nickname || '',
       email: updated.email || '',
       group: updated.group || 'user',
