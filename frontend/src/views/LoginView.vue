@@ -2,7 +2,7 @@
   <div class="app-bg login-page">
     <section class="card login-card">
       <h1>Sign In</h1>
-      <p class="muted">Use BASIC_USER/BASIC_PASS configured on the backend.</p>
+      <p class="muted">Sign in with your registered email and password.</p>
 
       <form class="form-grid" @submit.prevent="submit">
         <label>

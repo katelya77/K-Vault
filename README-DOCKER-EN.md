@@ -36,7 +36,7 @@ What this does:
 
 1. Fill at least these values in `.env`:
 
-- `BASIC_USER` / `BASIC_PASS` (optional, set both to enable login)
+- `ADMIN_EMAIL` (optional, only this email can register; registration closed if unset)
 - one bootstrap storage config (for example Telegram: `TG_BOT_TOKEN` + `TG_CHAT_ID`)
 - optional settings store mode:
   - default: `SETTINGS_STORE=sqlite`
@@ -181,7 +181,7 @@ Failure isolation:
 | :--- | :--- |
 | `CONFIG_ENCRYPTION_KEY` | Required. Encrypt/decrypt dynamic storage secrets in SQLite |
 | `SESSION_SECRET` | Session/signature secret |
-| `BASIC_USER` / `BASIC_PASS` | Admin login credentials (set both to enable auth) |
+| `ADMIN_EMAIL` | Registration whitelist (only this email can register; registration closed if unset) |
 | `UPLOAD_MAX_SIZE` | Global upload limit (bytes), default 100MB |
 | `UPLOAD_SMALL_FILE_THRESHOLD` | Switch threshold for direct/chunk upload |
 | `CHUNK_SIZE` | Chunk size in bytes |
@@ -328,7 +328,6 @@ Optional create/update smoke config:
 
 ```bash
 BASE_URL=http://localhost:8080 \
-BASIC_USER=admin BASIC_PASS=your_password \
 SMOKE_STORAGE_TYPE=webdav \
 SMOKE_STORAGE_CONFIG_JSON='{"baseUrl":"https://dav.example.com","username":"u","password":"p"}' \
 node scripts/storage-regression.js

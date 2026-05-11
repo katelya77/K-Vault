@@ -1,4 +1,4 @@
-﻿import { createS3Client } from '../utils/s3client.js';
+import { createS3Client } from '../utils/s3client.js';
 import { checkDiscordConnection } from '../utils/discord.js';
 import { checkHuggingFaceConnection, hasHuggingFaceConfig } from '../utils/huggingface.js';
 import { checkWebDAVConnection, hasWebDAVConfig } from '../utils/webdav.js';
@@ -278,13 +278,6 @@ export async function onRequestGet(context) {
           };
         })
     );
-  }
-
-  if (env.BASIC_USER && env.BASIC_PASS) {
-    status.auth = {
-      enabled: true,
-      message: 'Enabled',
-    };
   }
 
   await Promise.allSettled(checks);

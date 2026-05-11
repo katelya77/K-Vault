@@ -1,4 +1,4 @@
-﻿const path = require('node:path');
+const path = require('node:path');
 
 function toBool(value, defaultValue = false) {
   if (value == null || value === '') return defaultValue;
@@ -62,8 +62,8 @@ function loadConfig(env = process.env) {
     nodeEnv: normalizeEnvString(env.NODE_ENV, 'development'),
     publicBaseUrl: normalizeEnvString(env.PUBLIC_BASE_URL),
 
-    basicUser: normalizeEnvString(env.BASIC_USER),
-    basicPass: normalizeEnvString(env.BASIC_PASS),
+    basicUser: normalizeEnvString(''),
+    basicPass: normalizeEnvString(''),
     sessionCookieName: normalizeEnvString(env.SESSION_COOKIE_NAME, 'k_vault_session'),
     sessionDurationMs: toInt(env.SESSION_DURATION_MS, 24 * 60 * 60 * 1000),
 

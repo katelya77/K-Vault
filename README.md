@@ -148,9 +148,7 @@
 | :--- | :--- | :---: |
 | `TG_Bot_Token` | Telegram Bot Token | ✅ |
 | `TG_Chat_ID` | Telegram 频道 ID | ✅ |
-| `BASIC_USER` | 管理后台用户名 | 可选 |
-| `BASIC_PASS` | 管理后台密码 | 可选 |
-| `ADMIN_EMAIL` | 管理员邮箱（可用邮箱登录） | 可选 |
+| `ADMIN_EMAIL` | 注册白名单邮箱（仅此邮箱可注册，未设置则关闭注册） | 可选 |
 | `ALLOW_MEMORY_SESSION` | 允许内存会话存储（仅本地开发） | 可选 |
 | `STORAGE_TOTAL_CAPACITY` | 总存储容量（支持 TB/GB/MB/KB/B，默认 114TB） | 可选 |
 
@@ -341,7 +339,6 @@ docker compose --profile redis up -d --build
 
 ```bash
 BASE_URL=https://你的域名 \
-BASIC_USER=admin BASIC_PASS=your_password \
 SMOKE_STORAGE_TYPE=webdav \
 SMOKE_STORAGE_CONFIG_JSON='{"baseUrl":"https://dav.example.com","username":"u","password":"p","rootPath":"uploads"}' \
 node scripts/storage-regression.js
@@ -747,7 +744,7 @@ curl -X POST "http://127.0.0.1:8081/bot<YOUR_BOT_TOKEN>/setWebhook" \
 
 1. 在环境变量中设置 `GUEST_UPLOAD` = `true`
 2. 按需调整 `GUEST_MAX_FILE_SIZE` 和 `GUEST_DAILY_LIMIT`
-3. 确保已配置 `BASIC_USER` 和 `BASIC_PASS`（否则无访客/管理员区分）
+3. 确保已在注册页面创建了管理员账户（系统第一个注册的用户自动成为管理员）
 4. 重新部署
 
 **功能说明：**
@@ -855,9 +852,7 @@ curl -X POST "http://127.0.0.1:8081/bot<YOUR_BOT_TOKEN>/setWebhook" \
 | `TG_UPLOAD_NOTIFY` | 网页上传成功后发送“直链+File ID”通知消息 | 可选 |
 | `FILE_URL_SECRET` | 签名直链密钥 | 可选 |
 | `TG_FILE_URL_SECRET` | 同上（兼容变量名） | 可选 |
-| `BASIC_USER` | 管理后台用户名 | 可选 |
-| `BASIC_PASS` | 管理后台密码 | 可选 |
-| `ADMIN_EMAIL` | 管理员邮箱（可用邮箱登录） | 可选 |
+| `ADMIN_EMAIL` | 注册白名单邮箱（仅此邮箱可注册，未设置则关闭注册） | 可选 |
 | `ALLOW_MEMORY_SESSION` | 允许内存会话存储（仅本地开发） | 可选 |
 | `STORAGE_TOTAL_CAPACITY` | 总存储容量（支持 TB/GB/MB/KB/B，默认 114TB） | 可选 |
 | `USE_R2` | 启用 R2 存储 | 可选 |

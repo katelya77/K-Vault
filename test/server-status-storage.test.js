@@ -18,8 +18,6 @@ describe('Server status storage semantics', function () {
     process.env.SESSION_SECRET = 'status_test_secret_123456';
     process.env.DATA_DIR = tmpDir;
     process.env.DB_PATH = path.join(tmpDir, 'status-test.db');
-    process.env.BASIC_USER = '';
-    process.env.BASIC_PASS = '';
     process.env.TG_BOT_TOKEN = '';
     process.env.TG_CHAT_ID = '';
     process.env.HF_TOKEN = '';

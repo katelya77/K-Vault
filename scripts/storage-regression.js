@@ -5,15 +5,15 @@
  *
  * Usage example:
  *   BASE_URL=http://localhost:8080 \
- *   BASIC_USER=admin BASIC_PASS=yourpass \
+ *   ADMIN_EMAIL=admin@example.com \
  *   SMOKE_STORAGE_TYPE=webdav \
  *   SMOKE_STORAGE_CONFIG_JSON='{"baseUrl":"https://dav.example.com","username":"u","password":"p"}' \
  *   node scripts/storage-regression.js
  */
 
 const BASE_URL = String(process.env.BASE_URL || 'http://localhost:8080').replace(/\/+$/, '');
-const BASIC_USER = String(process.env.BASIC_USER || '');
-const BASIC_PASS = String(process.env.BASIC_PASS || '');
+const ADMIN_EMAIL = String(process.env.ADMIN_EMAIL || '');
+const ADMIN_PASS = String(process.env.ADMIN_PASS || 'admin123');
 const SMOKE_STORAGE_TYPE = String(process.env.SMOKE_STORAGE_TYPE || '').trim().toLowerCase();
 const SMOKE_STORAGE_CONFIG_JSON = String(process.env.SMOKE_STORAGE_CONFIG_JSON || '').trim();
 const TEST_ONLY_TYPES = String(process.env.TEST_ONLY_TYPES || '')
@@ -94,29 +94,19 @@ async function ensureLoginIfNeeded() {
     return;
   }
 
-  if (!BASIC_USER || !BASIC_PASS) {
-    throw new Error('Auth is required. Set BASIC_USER and BASIC_PASS for regression script.');
+  if (!ADMIN_EMAIL) {
+    throw new Error('Auth is required. Set ADMIN_EMAIL for regression script.');
   }
 
   const loginNew = await request('/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username: BASIC_USER, password: BASIC_PASS }),
+    body: JSON.stringify({ email: ADMIN_EMAIL, password: ADMIN_PASS }),
   });
   if (!loginNew.payload?.success) {
-    throw new Error('Login with {username,password} did not succeed.');
+    throw new Error('Login with {email,password} did not succeed.');
   }
-  logOk('login payload {username,password} passed');
-
-  const loginCompat = await request('/api/auth/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ user: BASIC_USER, pass: BASIC_PASS }),
-  });
-  if (!loginCompat.payload?.success) {
-    throw new Error('Login with {user,pass} did not succeed.');
-  }
-  logOk('login payload {user,pass} passed');
+  logOk('login payload {email,password} passed');
 }
 
 async function checkHealthAndStatus() {

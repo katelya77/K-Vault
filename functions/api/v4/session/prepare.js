@@ -19,14 +19,12 @@ function cloudreveSuccess(data) {
   );
 }
 
-export async function onRequestGet(context) {
-  const { env } = context;
-  const hasAuth = env.BASIC_USER && env.BASIC_PASS;
+export async function onRequestGet(_context) {
 
   return cloudreveSuccess({
     webauthn_enabled: false,
     sso_enabled: false,
-    password_enabled: hasAuth ? true : false,
+    password_enabled: true,
     qq_enabled: false,
   });
 }

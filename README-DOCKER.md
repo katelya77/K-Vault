@@ -60,7 +60,7 @@ node scripts/bootstrap-env.js
 - `CONFIG_ENCRYPTION_KEY`
 - `SESSION_SECRET`
 - 一套默认存储（例如 `TG_BOT_TOKEN` + `TG_CHAT_ID`）
-- 可选登录鉴权：`BASIC_USER` + `BASIC_PASS`
+- 登录鉴权已内置（首个注册用户自动成为管理员）
 
 1. 启动服务：
 
@@ -183,7 +183,7 @@ curl -i -X POST "http://localhost:8080/api/auth/login" \
 | :--- | :--- |
 | `CONFIG_ENCRYPTION_KEY` | 必填。加解密动态存储配置 |
 | `SESSION_SECRET` | Session/签名密钥 |
-| `BASIC_USER` / `BASIC_PASS` | 后台登录账号（同时设置才启用） |
+| `ADMIN_EMAIL` | 注册白名单邮箱（仅此邮箱可注册，未设置关闭注册） |
 | `UPLOAD_MAX_SIZE` | 全局上传限制（字节） |
 | `UPLOAD_SMALL_FILE_THRESHOLD` | 直传/分片切换阈值 |
 | `CHUNK_SIZE` | 分片大小（字节） |
@@ -321,7 +321,6 @@ npm run regression:storage
 
 ```bash
 BASE_URL=http://localhost:8080 \
-BASIC_USER=admin BASIC_PASS=your_password \
 SMOKE_STORAGE_TYPE=webdav \
 SMOKE_STORAGE_CONFIG_JSON='{"baseUrl":"https://dav.example.com","username":"u","password":"p"}' \
 node scripts/storage-regression.js

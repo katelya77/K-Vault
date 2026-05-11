@@ -28,12 +28,31 @@ export async function onRequestGet(context) {
 
     const authResult = await checkAuthentication(context);
 
-    return new Response(JSON.stringify({
+    const response = {
       authenticated: authResult.authenticated,
       authRequired: true,
       reason: authResult.reason,
-      guestUpload: guestConfig
-    }), {
+      guestUpload: guestConfig,
+      user: null
+    };
+
+    // 如果已登录，附加用户信息
+    if (authResult.authenticated && authResult.userId) {
+      const user = await env.DB.prepare(
+        "SELECT id, nickname, email, group, status FROM users WHERE id = ? LIMIT 1"
+      ).bind(authResult.userId).first();
+      if (user) {
+        response.user = {
+          id: user.id,
+          nick: user.nickname,
+          email: user.email,
+          group: user.group,
+          status: user.status
+        };
+      }
+    }
+
+    return new Response(JSON.stringify(response), {
       headers: { 'Content-Type': 'application/json' }
     });
 

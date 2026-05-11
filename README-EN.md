@@ -117,8 +117,7 @@ Recommended architecture for multi-cloud mounts:
 | `TG_Chat_ID` | Telegram channel ID | 鉁?|
 | `TG_BOT_TOKEN` | Telegram Bot Token (Docker/self-host naming) | Optional |
 | `TG_CHAT_ID` | Telegram channel ID (Docker/self-host naming) | Optional |
-| `BASIC_USER` | Admin username | Optional |
-| `BASIC_PASS` | Admin password | Optional |
+| `ADMIN_EMAIL` | Registration whitelist (only this email can register; registration closed if unset) | Optional |
 
 **Redeploy** - Changes to environment variables require redeployment to take effect
 
@@ -166,7 +165,6 @@ Example:
 
 ```bash
 BASE_URL=https://your-domain \
-BASIC_USER=admin BASIC_PASS=your_password \
 SMOKE_STORAGE_TYPE=webdav \
 SMOKE_STORAGE_CONFIG_JSON='{"baseUrl":"https://dav.example.com","username":"u","password":"p","rootPath":"uploads"}' \
 node scripts/storage-regression.js
@@ -383,7 +381,7 @@ Allows non-logged-in users to upload files. Site owners can configure whether it
 
 1. Set `GUEST_UPLOAD` = `true` in environment variables
 2. Adjust `GUEST_MAX_FILE_SIZE` and `GUEST_DAILY_LIMIT` as needed
-3. Ensure `BASIC_USER` and `BASIC_PASS` are configured (otherwise guest/admin cannot be distinguished)
+3. Ensure a admin account has been created via the registration page (the first registered user automatically becomes admin)
 4. Redeploy
 
 **Feature behavior:**
@@ -489,8 +487,7 @@ Allows non-logged-in users to upload files. Site owners can configure whether it
 | `TG_UPLOAD_NOTIFY` | Send "direct link + File ID" notification after web upload succeeds | Optional |
 | `FILE_URL_SECRET` | Signed direct-link secret | Optional |
 | `TG_FILE_URL_SECRET` | Same as above (compatible variable name) | Optional |
-| `BASIC_USER` | Admin username | Optional |
-| `BASIC_PASS` | Admin password | Optional |
+| `ADMIN_EMAIL` | Registration whitelist (only this email can register) | Optional |
 | `USE_R2` | Enable R2 storage | Optional |
 | `CHUNK_BACKEND` | Chunk temporary storage backend (`auto`/`r2`/`kv`) | Optional |
 | `S3_ENDPOINT` | S3 endpoint URL | Optional |

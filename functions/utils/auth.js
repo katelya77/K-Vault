@@ -20,35 +20,6 @@ export function generateSessionToken() {
 }
 
 /**
- * 验证 Basic Auth 凭据
- */
-export function verifyBasicAuth(request, env) {
-  const authorization = request.headers.get('Authorization');
-  if (!authorization) return null;
-
-  const [scheme, encoded] = authorization.split(' ');
-  if (!encoded || scheme !== 'Basic') return null;
-
-  try {
-    const buffer = Uint8Array.from(atob(encoded), c => c.charCodeAt(0));
-    const decoded = new TextDecoder().decode(buffer).normalize();
-    const index = decoded.indexOf(':');
-    
-    if (index === -1 || /[\0-\x1F\x7F]/.test(decoded)) return null;
-
-    const user = decoded.substring(0, index);
-    const pass = decoded.substring(index + 1);
-
-    if (env.BASIC_USER === user && env.BASIC_PASS === pass) {
-      return { user, authenticated: true };
-    }
-  } catch (e) {
-    console.error('Basic auth decode error:', e);
-  }
-  return null;
-}
-
-/**
  * 从 Cookie 获取会话
  */
 export function getSessionFromCookie(request) {
@@ -117,10 +88,10 @@ export async function verifySession(sessionToken, env) {
 /**
  * 创建会话
  */
-export async function createSession(user, env) {
+export async function createSession(userId, env) {
   const token = generateSessionToken();
   const sessionData = {
-    user,
+    userId,
     createdAt: Date.now(),
     expiresAt: Date.now() + SESSION_DURATION
   };
@@ -172,10 +143,10 @@ export function createLegacyClearSessionCookieHeader() {
 }
 
 /**
- * 检查是否需要认证
+ * 检查是否需要认证 — 现在始终基于 DB 用户，恒为 true
  */
-export function isAuthRequired(env) {
-  return env.BASIC_USER && env.BASIC_PASS;
+export function isAuthRequired(_env) {
+  return true;
 }
 
 /**
@@ -270,6 +241,68 @@ export async function verifyDownloadToken(fileId, token, expires, secret, uid) {
 }
 
 /**
+ * 从令牌获取会话数据（含 userId）
+ */
+export async function getSessionUser(sessionToken, env) {
+  if (!sessionToken) return null;
+
+  try {
+    if (env.img_url) {
+      const sessionData = await env.img_url.get(`session:${sessionToken}`, { type: 'json' });
+      if (!sessionData || Date.now() > sessionData.expiresAt) {
+        if (sessionData) await env.img_url.delete(`session:${sessionToken}`);
+        return null;
+      }
+      return sessionData;
+    }
+
+    if (!canUseMemoryStorage(env)) return null;
+
+    const sessionData = memorySessions.get(sessionToken);
+    if (!sessionData || Date.now() > sessionData.expiresAt) {
+      if (sessionData) memorySessions.delete(sessionToken);
+      return null;
+    }
+    return sessionData;
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * 密码哈希（PBKDF2 + SHA-256，10000 次迭代）
+ * 返回 base64(salt):base64(hash) 格式
+ */
+export async function hashPassword(password) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey('raw', encoder.encode(password), { name: 'PBKDF2' }, false, ['deriveBits']);
+  const hash = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: 10000, hash: 'SHA-256' }, key, 256);
+  const saltB64 = btoa(String.fromCharCode(...salt));
+  const hashB64 = btoa(String.fromCharCode(...new Uint8Array(hash)));
+  return `${saltB64}:${hashB64}`;
+}
+
+/**
+ * 验证密码
+ */
+export async function verifyPassword(password, stored) {
+  if (!stored || !stored.includes(':')) return false;
+  const [saltB64, hashB64] = stored.split(':');
+  try {
+    const salt = Uint8Array.from(atob(saltB64), c => c.charCodeAt(0));
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey('raw', encoder.encode(password), { name: 'PBKDF2' }, false, ['deriveBits']);
+    const hash = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: 10000, hash: 'SHA-256' }, key, 256);
+    const actualHash = new Uint8Array(hash);
+    if (btoa(String.fromCharCode(...actualHash)) !== hashB64) return false;
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
  * 综合认证检查
  */
 export async function checkAuthentication(context) {
@@ -282,20 +315,20 @@ export async function checkAuthentication(context) {
   
   // 检查 Cookie 会话
   const sessionToken = getSessionFromCookie(request);
-  if (sessionToken && await verifySession(sessionToken, env)) {
-    return { authenticated: true, reason: 'session', token: sessionToken };
+  if (sessionToken) {
+    const sessionData = await getSessionUser(sessionToken, env);
+    if (sessionData) {
+      return { authenticated: true, reason: 'session', token: sessionToken, userId: sessionData.userId };
+    }
   }
   
   // 检查 Bearer Token（前端用这种方式）
   const bearerToken = getBearerToken(request);
-  if (bearerToken && await verifySession(bearerToken, env)) {
-    return { authenticated: true, reason: 'bearer', token: bearerToken };
-  }
-  
-  // 检查 Basic Auth
-  const basicAuth = verifyBasicAuth(request, env);
-  if (basicAuth) {
-    return { authenticated: true, reason: 'basic-auth', user: basicAuth.user };
+  if (bearerToken) {
+    const sessionData = await getSessionUser(bearerToken, env);
+    if (sessionData) {
+      return { authenticated: true, reason: 'bearer', token: bearerToken, userId: sessionData.userId };
+    }
   }
   
   return { authenticated: false };

@@ -83,7 +83,7 @@ export async function onRequestGet(context) {
     const user = await getUser(env) || {
       id: '1',
       email: '',
-      nickname: env.BASIC_USER || 'admin',
+      nickname: 'admin',
       created_at: new Date().toISOString(),
     };
 
