@@ -85,7 +85,7 @@ export async function onRequestGet(context) {
     }
 
     const row = await env.DB.prepare(
-      "SELECT group FROM users WHERE id = ? LIMIT 1"
+      'SELECT "group" FROM users WHERE id = ? LIMIT 1'
     ).bind(userId).first();
     const userGroup = row?.group || 'user';
     const isAdmin = userGroup === 'admin';

@@ -32,7 +32,7 @@ export async function onRequest(context) {
 
   try {
     const user = await env.DB.prepare(
-      "SELECT group FROM users WHERE id = ? LIMIT 1"
+      'SELECT "group" FROM users WHERE id = ? LIMIT 1'
     ).bind(userId).first();
 
     if (!user || user.group !== 'admin') {
