@@ -11,6 +11,8 @@ const PUBLIC_PATHS = [
   '/api/v4/session/prepare',
   '/api/v4/file/get',
   '/api/v4/site/config/explorer',
+  '/api/v4/site/config/basic',
+  '/api/v4/site/config/login',
   '/api/v4/site/captcha',
 ];
 
