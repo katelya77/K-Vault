@@ -1,4 +1,5 @@
 import { invalidateStorageHealth, getStorageHealth } from '../../../../../utils/storage-health.js';
+import { buildTelegramBotApiUrl, getTelegramUploadMethodAndField, pickTelegramFileId } from '../../../../../utils/telegram.js';
 
 function cloudreveSuccess(data) {
   return new Response(JSON.stringify({ code: 0, data }), {
@@ -94,7 +95,6 @@ export async function onRequestPost(context) {
     let tgFileId = '';
 
     if (useTelegram) {
-      const { buildTelegramBotApiUrl, getTelegramUploadMethodAndField, pickTelegramFileId } = await import('../../../../../utils/telegram.js');
 
       const formData = new FormData();
       formData.append('chat_id', env.TG_Chat_ID);
