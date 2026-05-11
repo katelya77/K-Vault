@@ -73,19 +73,9 @@ const MIGRATIONS = [
       return result?.count > 0;
     },
     migrate: async (db) => {
-      await db.prepare(`CREATE TABLE IF NOT EXISTS users (
-        id TEXT PRIMARY KEY,
-        nickname TEXT NOT NULL DEFAULT '',
-        email TEXT NOT NULL DEFAULT '',
-        preferred_theme TEXT NOT NULL DEFAULT '',
-        language TEXT NOT NULL DEFAULT '',
-        settings_json TEXT NOT NULL DEFAULT '{}',
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-      )`).run();
+      await db.prepare("CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, nickname TEXT NOT NULL DEFAULT '', email TEXT NOT NULL DEFAULT '', preferred_theme TEXT NOT NULL DEFAULT '', language TEXT NOT NULL DEFAULT '', settings_json TEXT NOT NULL DEFAULT '{}', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)").run();
       const now = Date.now();
-      await db.prepare(`INSERT OR IGNORE INTO users (id, nickname, email, created_at, updated_at)
-        VALUES ('1', 'admin', '', ?, ?)`).bind(now, now).run();
+      await db.prepare("INSERT OR IGNORE INTO users (id, nickname, email, created_at, updated_at) VALUES ('1', 'admin', '', ?, ?)").bind(now, now).run();
     }
   }
 ];
@@ -142,14 +132,5 @@ export async function ensureTablesExist(db) {
   await db.prepare("CREATE TABLE IF NOT EXISTS shares (id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE, file_id TEXT NOT NULL, password_hash TEXT, expires_at INTEGER, max_downloads INTEGER DEFAULT 0, download_count INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL)").run();
   await db.prepare("CREATE TABLE IF NOT EXISTS api_tokens (id TEXT PRIMARY KEY, name TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL, last_used_at INTEGER, enabled INTEGER NOT NULL DEFAULT 1)").run();
   await db.prepare("CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value_json TEXT NOT NULL, updated_at INTEGER NOT NULL)").run();
-  await db.prepare(`CREATE TABLE IF NOT EXISTS users (
-    id TEXT PRIMARY KEY,
-    nickname TEXT NOT NULL DEFAULT '',
-    email TEXT NOT NULL DEFAULT '',
-    preferred_theme TEXT NOT NULL DEFAULT '',
-    language TEXT NOT NULL DEFAULT '',
-    settings_json TEXT NOT NULL DEFAULT '{}',
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
-  )`).run();
+  await db.prepare("CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, nickname TEXT NOT NULL DEFAULT '', email TEXT NOT NULL DEFAULT '', preferred_theme TEXT NOT NULL DEFAULT '', language TEXT NOT NULL DEFAULT '', settings_json TEXT NOT NULL DEFAULT '{}', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)").run();
 }
