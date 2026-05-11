@@ -33,6 +33,20 @@ const MIGRATIONS = [
       await db.prepare("CREATE INDEX IF NOT EXISTS idx_files_created_at ON files(created_at)").run();
       await db.prepare("CREATE INDEX IF NOT EXISTS idx_folders_parent_id ON folders(parent_id)").run();
     }
+  },
+  {
+    version: 3,
+    name: 'add_data_column',
+    description: '添加 data BLOB 列，支持 D1 直接存储文件数据',
+    check: async (db) => {
+      const result = await db.prepare(
+        "SELECT COUNT(*) as count FROM pragma_table_info('files') WHERE name='data'"
+      ).first();
+      return result?.count > 0;
+    },
+    migrate: async (db) => {
+      await db.prepare('ALTER TABLE files ADD COLUMN data BLOB').run();
+    }
   }
 ];
 

@@ -23,6 +23,7 @@ export async function onRequestPut(context) {
       policy_id: body.policy_id || 'default',
       entity_type: body.entity_type || '',
       last_modified: body.last_modified || now,
+      channel: body.channel || '',
       created_at: now,
     };
 

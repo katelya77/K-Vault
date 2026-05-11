@@ -1,3 +1,5 @@
+import { invalidateStorageHealth } from '../../../../utils/storage-health.js';
+
 function cloudreveSuccess(data) {
   return new Response(JSON.stringify({ code: 0, data }), {
     status: 200,
@@ -27,6 +29,19 @@ function parseFolderPath(raw) {
   return lastSlash <= 0 ? '' : pathPart.substring(0, lastSlash);
 }
 
+function getListType(ext) {
+  const imgExts = ['jpg','jpeg','png','gif','webp','bmp','svg','ico','tiff','tif','avif','heic','heif'];
+  const vidExts = ['mp4','webm','mkv','avi','mov','wmv','flv','m4v','3gp','ogv'];
+  const audExts = ['mp3','wav','ogg','flac','aac','wma','m4a','opus','ac3','mid','midi'];
+  const docExts = ['pdf','doc','docx','xls','xlsx','ppt','pptx','txt','md','csv','json','xml','yaml','yml','html','htm','css','js','ts','py','java','c','cpp','h','hpp','sh','bat','ps1','epub','mobi','azw3','fb2'];
+
+  if (imgExts.includes(ext)) return 'Image';
+  if (vidExts.includes(ext)) return 'Video';
+  if (audExts.includes(ext)) return 'Audio';
+  if (docExts.includes(ext)) return 'Document';
+  return 'None';
+}
+
 export async function onRequestPost(context) {
   const { env, request, params } = context;
   const sessionID = params.sessionID;
@@ -36,7 +51,7 @@ export async function onRequestPost(context) {
   }
 
   if (!env.img_url) {
-    return errorResponse('KV (img_url) 未绑定', 500);
+    return errorResponse('KV (img_url) 未绑定（用于会话管理）', 500);
   }
 
   if (!env.DB) {
@@ -59,44 +74,84 @@ export async function onRequestPost(context) {
     const now = Date.now();
     const fileId = crypto.randomUUID();
     const folderPath = parseFolderPath(session.uri);
-    const storageKey = 'tmp:file:' + sessionID;
-
-    await env.img_url.put(storageKey, fileData, {
-      expirationTtl: 604800,
-    });
 
     const mime = session.mime_type || '';
-    const ext = session.file_name.includes('.') ? session.file_name.split('.').pop() : '';
+    const ext = session.file_name.includes('.') ? session.file_name.split('.').pop().toLowerCase() : '';
+    const listType = getListType(ext);
 
-    let listType = 'None';
-    const imgExts = ['jpg','jpeg','png','gif','webp','bmp','svg','ico','tiff','tif','avif','heic','heif'];
-    const vidExts = ['mp4','webm','mkv','avi','mov','wmv','flv','m4v','3gp','ogv'];
-    const audExts = ['mp3','wav','ogg','flac','aac','wma','m4a','opus','ac3','mid','midi'];
-    const docExts = ['pdf','doc','docx','xls','xlsx','ppt','pptx','txt','md','csv','json','xml','yaml','yml','html','htm','css','js','ts','py','java','c','cpp','h','hpp','sh','bat','ps1','epub','mobi','azw3','fb2'];
+    const useTelegram = (session.channel === 'telegram' || (!session.channel && env.TG_Bot_Token && env.TG_Chat_ID));
 
-    if (imgExts.includes(ext)) listType = 'Image';
-    else if (vidExts.includes(ext)) listType = 'Video';
-    else if (audExts.includes(ext)) listType = 'Audio';
-    else if (docExts.includes(ext)) listType = 'Document';
+    let storageType = 'd1';
+    let storageKey = '';
+    let tgFileId = '';
+
+    if (useTelegram) {
+      const { buildTelegramBotApiUrl, getTelegramUploadMethodAndField, pickTelegramFileId } = await import('../../../../utils/telegram.js');
+
+      const formData = new FormData();
+      formData.append('chat_id', env.TG_Chat_ID);
+      const { method: apiEndpoint, field } = getTelegramUploadMethodAndField(mime || 'application/octet-stream');
+      const blob = new Blob([fileData], { type: mime || 'application/octet-stream' });
+      formData.append(field, blob, session.file_name);
+
+      const tgResp = await fetch(buildTelegramBotApiUrl(env, apiEndpoint), {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!tgResp.ok) {
+        const errBody = await tgResp.json().catch(() => ({}));
+        await invalidateStorageHealth(env, 'telegram');
+        return errorResponse('Telegram 上传失败: ' + (errBody.description || tgResp.statusText), 500);
+      }
+
+      const tgData = await tgResp.json();
+      tgFileId = pickTelegramFileId(tgData);
+
+      if (!tgFileId) {
+        await invalidateStorageHealth(env, 'telegram');
+        return errorResponse('Telegram 上传后未获取到 file_id', 500);
+      }
+
+      storageType = 'telegram';
+      storageKey = tgFileId;
+    }
 
     const maxRetries = 3;
     let lastError = null;
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
-        await env.DB.prepare(
-          "INSERT OR IGNORE INTO files (id, storage_config_id, storage_type, storage_key, storage_file_id, file_name, physical_file_name, file_size, mime_type, folder_id, folder_path, list_type, label, liked, extra_json, created_at, updated_at) VALUES (?, 'default', 'kv', ?, '', ?, '', ?, ?, '', ?, ?, ?, 0, '{}', ?, ?)"
-        ).bind(
-          fileId,
-          storageKey,
-          session.file_name,
-          fileData.byteLength,
-          mime,
-          folderPath,
-          listType,
-          'None',
-          now,
-          now,
-        ).run();
+        if (useTelegram) {
+          await env.DB.prepare(
+            "INSERT OR IGNORE INTO files (id, storage_config_id, storage_type, storage_key, storage_file_id, file_name, physical_file_name, file_size, mime_type, folder_id, folder_path, list_type, label, liked, extra_json, created_at, updated_at) VALUES (?, 'default', 'telegram', ?, '', ?, '', ?, ?, '', ?, ?, ?, 0, '{}', ?, ?)"
+          ).bind(
+            fileId,
+            storageKey,
+            session.file_name,
+            fileData.byteLength,
+            mime,
+            folderPath,
+            listType,
+            'None',
+            now,
+            now,
+          ).run();
+        } else {
+          await env.DB.prepare(
+            "INSERT OR IGNORE INTO files (id, storage_config_id, storage_type, storage_key, storage_file_id, file_name, physical_file_name, file_size, mime_type, folder_id, folder_path, list_type, label, liked, extra_json, created_at, updated_at, data) VALUES (?, 'default', 'd1', '', '', ?, '', ?, ?, '', ?, ?, ?, 0, '{}', ?, ?, ?)"
+          ).bind(
+            fileId,
+            session.file_name,
+            fileData.byteLength,
+            mime,
+            folderPath,
+            listType,
+            'None',
+            now,
+            now,
+            fileData,
+          ).run();
+        }
         lastError = null;
         break;
       } catch (dbErr) {
@@ -130,6 +185,7 @@ export async function onRequestPost(context) {
       file_id: fileId,
       name: session.file_name,
       size: fileData.byteLength,
+      storage_type: storageType,
     });
   } catch (error) {
     return errorResponse('上传处理失败: ' + error.message, 500);

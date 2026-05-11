@@ -1,4 +1,5 @@
 import { verifyDownloadToken, verifySession, getSessionFromCookie, getBearerToken } from '../../../../utils/auth.js';
+import { buildTelegramBotApiUrl, buildTelegramFileUrl } from '../../../../utils/telegram.js';
 
 function errorResponse(msg, status = 404) {
   return new Response(JSON.stringify({ code: status, msg, error: msg }), {
@@ -64,48 +65,74 @@ export async function onRequestGet(context) {
 
   try {
     const row = await env.DB.prepare(
-      'SELECT id, file_name, mime_type, file_size, storage_key, storage_type, storage_file_id FROM files WHERE id = ? LIMIT 1'
+      'SELECT id, file_name, mime_type, file_size, storage_key, storage_type, storage_file_id, data FROM files WHERE id = ? LIMIT 1'
     ).bind(fileId).first();
 
     if (!row) {
       return errorResponse('文件不存在', 404);
     }
 
-    if (row.storage_type === 'kv' && row.storage_key && env.img_url) {
-      const fileData = await env.img_url.get(row.storage_key, { type: 'arrayBuffer' });
+    const ext = row.file_name.includes('.') ? row.file_name.split('.').pop().toLowerCase() : '';
+    const contentType = MIME_TYPES[ext] || row.mime_type || 'application/octet-stream';
 
-      if (fileData) {
-        const ext = row.file_name.includes('.') ? row.file_name.split('.').pop().toLowerCase() : '';
-        const contentType = MIME_TYPES[ext] || row.mime_type || 'application/octet-stream';
+    let fileData = null;
 
-        if (ext === 'mp4' || ext === 'webm' || ext === 'mkv' || ext === 'mov' || ext === 'avi') {
-          const rangeHeader = context.request.headers.get('Range');
-          if (rangeHeader) {
-            const parts = rangeHeader.replace(/bytes=/, '').split('-');
-            const start = parseInt(parts[0]);
-            const end = parts[1] ? parseInt(parts[1]) : Math.min(start + 1048576, fileData.byteLength - 1);
-            const chunk = fileData.slice(start, end + 1);
-            return new Response(chunk, {
-              status: 206,
-              headers: {
-                'Content-Type': contentType,
-                'Content-Range': `bytes ${start}-${end}/${fileData.byteLength}`,
-                'Content-Length': String(chunk.byteLength),
-                'Accept-Ranges': 'bytes',
-                'Cache-Control': 'public, max-age=31536000',
-              },
-            });
-          }
+    // 1. 优先从 D1 data 列读取（迁移后的 Telegram 数据或新上传的 D1 存储）
+    if (row.data) {
+      fileData = row.data;
+    }
+    // 2. 回退到 KV 读取（老数据）
+    else if (row.storage_type === 'kv' && row.storage_key && env.img_url) {
+      fileData = await env.img_url.get(row.storage_key, { type: 'arrayBuffer' });
+    }
+
+    if (fileData) {
+      if (ext === 'mp4' || ext === 'webm' || ext === 'mkv' || ext === 'mov' || ext === 'avi') {
+        const rangeHeader = context.request.headers.get('Range');
+        if (rangeHeader) {
+          const parts = rangeHeader.replace(/bytes=/, '').split('-');
+          const start = parseInt(parts[0]);
+          const end = parts[1] ? parseInt(parts[1]) : Math.min(start + 1048576, fileData.byteLength - 1);
+          const chunk = fileData.slice(start, end + 1);
+          return new Response(chunk, {
+            status: 206,
+            headers: {
+              'Content-Type': contentType,
+              'Content-Range': `bytes ${start}-${end}/${fileData.byteLength}`,
+              'Content-Length': String(chunk.byteLength),
+              'Accept-Ranges': 'bytes',
+              'Cache-Control': 'public, max-age=31536000',
+            },
+          });
         }
+      }
 
-        return new Response(fileData, {
-          status: 200,
+      return new Response(fileData, {
+        status: 200,
+        headers: {
+          'Content-Type': contentType,
+          'Content-Length': String(fileData.byteLength),
+          'Cache-Control': 'public, max-age=31536000',
+          'Accept-Ranges': 'bytes',
+          'Content-Disposition': 'inline; filename="' + row.file_name + '"',
+        },
+      });
+    }
+
+    // 3. Telegram 存储 — 从 Bot API 获取并重定向
+    if (row.storage_type === 'telegram' && row.storage_key && env.TG_Bot_Token) {
+      const tgApiUrl = buildTelegramBotApiUrl(env, 'getFile') + '?file_id=' + encodeURIComponent(row.storage_key);
+      const tgResp = await fetch(tgApiUrl);
+      const tgData = await tgResp.json();
+
+      if (tgData.ok && tgData.result?.file_path) {
+        const fileUrl = buildTelegramFileUrl(env, tgData.result.file_path);
+        return new Response(null, {
+          status: 302,
           headers: {
-            'Content-Type': contentType,
-            'Content-Length': String(fileData.byteLength),
-            'Cache-Control': 'public, max-age=31536000',
-            'Accept-Ranges': 'bytes',
-            'Content-Disposition': 'inline; filename="' + row.file_name + '"',
+            'Location': fileUrl,
+            'Cache-Control': 'no-store',
+            'Access-Control-Allow-Origin': '*',
           },
         });
       }
