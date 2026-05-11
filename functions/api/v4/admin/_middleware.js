@@ -1,9 +1,11 @@
 /**
  * v4 Admin Middleware
  * 校验 session → 查 users 表 → group !== 'admin' 返回 403
+ * 支持 JWT token 回退（用于 init-db 等双认证路由）
  */
 
 import { getSessionUserFromRequest } from '../../../utils/auth.js';
+import { requireJwtAuth, isJwtAuthEnabled } from '../../../utils/jwt-auth.js';
 
 function jsonResponse(body, status = 200) {
   const headers = new Headers({
@@ -18,6 +20,13 @@ export async function onRequest(context) {
 
   const userId = await getSessionUserFromRequest(request, env);
   if (!userId) {
+    // session 无效，尝试 JWT token（?token=xxx）回退
+    if (isJwtAuthEnabled(env)) {
+      const jwtAuth = await requireJwtAuth(request, env);
+      if (jwtAuth.authorized) {
+        return await context.next();
+      }
+    }
     return jsonResponse({ code: 401, msg: '请先登录', error: 'Login required' }, 401);
   }
 
