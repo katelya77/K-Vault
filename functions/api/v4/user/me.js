@@ -1,11 +1,16 @@
-import { verifySession } from '../../../utils/auth.js';
-
-function generateAdminPermission() {
+function generatePermission(isAdmin) {
   const bytes = new Uint8Array(8);
-  bytes[0] = 0b11111111;
-  bytes[1] = 0b11111111;
-  bytes[2] = 0b11111111;
-  bytes[3] = 0b11111111;
+  if (isAdmin) {
+    bytes[0] = 0b11111111;
+    bytes[1] = 0b11111111;
+    bytes[2] = 0b11111111;
+    bytes[3] = 0b11111111;
+  } else {
+    bytes[0] = 0b11111111;
+    bytes[1] = 0b11111111;
+    bytes[2] = 0b00000000;
+    bytes[3] = 0b00000000;
+  }
   let binary = '';
   for (let i = 0; i < bytes.length; i++) {
     binary += String.fromCharCode(bytes[i]);
@@ -49,16 +54,8 @@ function fmtTime(ts) {
   return new Date(ts).toISOString();
 }
 
-async function checkAuth(request, env) {
-  const authHeader = request.headers.get('Authorization');
-  if (!authHeader) return false;
-  const token = authHeader.replace('Bearer ', '');
-  const result = await verifySession(token, env);
-  return result.valid;
-}
-
-async function getUser(env) {
-  const row = await env.DB.prepare("SELECT * FROM users WHERE id = '1'").first();
+async function getUser(userId, env) {
+  const row = await env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(userId).first();
   if (!row) return null;
   const settings = row.settings_json ? JSON.parse(row.settings_json) : {};
   return {
@@ -74,26 +71,31 @@ async function getUser(env) {
 }
 
 export async function onRequestGet(context) {
-  const { request, env } = context;
+  const { env, data } = context;
+
+  const userId = data?.userId;
+  if (!userId) {
+    return cloudreveError(40020, 'Invalid session');
+  }
 
   try {
-    if (!(await checkAuth(request, env))) {
-      return cloudreveError(40020, 'Invalid session');
+    const user = await getUser(userId, env);
+    if (!user) {
+      return cloudreveError(404, '用户不存在');
     }
 
-    const user = await getUser(env) || {
-      id: '1',
-      email: '',
-      nickname: 'admin',
-      created_at: new Date().toISOString(),
-    };
+    const row = await env.DB.prepare(
+      "SELECT group FROM users WHERE id = ? LIMIT 1"
+    ).bind(userId).first();
+    const userGroup = row?.group || 'user';
+    const isAdmin = userGroup === 'admin';
 
     return cloudreveSuccess({
       ...user,
       group: {
-        id: 'admin',
-        name: 'Administrator',
-        permission: generateAdminPermission(),
+        id: userGroup,
+        name: isAdmin ? 'Administrator' : 'User',
+        permission: generatePermission(isAdmin),
       },
     });
   } catch (error) {
@@ -103,30 +105,31 @@ export async function onRequestGet(context) {
 }
 
 export async function onRequestPut(context) {
-  const { request, env } = context;
+  const { request, env, data } = context;
+
+  const userId = data?.userId;
+  if (!userId) {
+    return cloudreveError(40020, 'Invalid session');
+  }
 
   try {
-    if (!(await checkAuth(request, env))) {
-      return cloudreveError(40020, 'Invalid session');
-    }
-
     const body = await request.json();
     const now = Date.now();
 
-    const row = await env.DB.prepare("SELECT * FROM users WHERE id = '1'").first();
+    const row = await env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(userId).first();
 
     if (row) {
       const nickname = body.nickname !== undefined ? body.nickname : row.nickname;
       const email = body.email !== undefined ? body.email : row.email;
-      await env.DB.prepare("UPDATE users SET nickname = ?, email = ?, updated_at = ? WHERE id = '1'")
-        .bind(nickname, email, now).run();
+      await env.DB.prepare("UPDATE users SET nickname = ?, email = ?, updated_at = ? WHERE id = ?")
+        .bind(nickname, email, now, userId).run();
     } else {
-      await env.DB.prepare("INSERT INTO users (id, nickname, email, created_at, updated_at) VALUES ('1', ?, ?, ?, ?)")
-        .bind(body.nickname || '', body.email || '', now, now).run();
+      await env.DB.prepare("INSERT INTO users (id, nickname, email, created_at, updated_at) VALUES (?, ?, ?, ?, ?)")
+        .bind(userId, body.nickname || '', body.email || '', now, now).run();
     }
 
     return cloudreveSuccess({
-      id: '1',
+      id: userId,
       email: body.email || '',
       nickname: body.nickname || '',
       updated_at: fmtTime(now),

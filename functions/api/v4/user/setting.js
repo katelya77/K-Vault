@@ -1,5 +1,3 @@
-import { verifySession } from '../../../utils/auth.js';
-
 const DEFAULT_USER_SETTINGS = {
   version_retention_enabled: false,
   version_retention_ext: [],
@@ -44,16 +42,8 @@ function cloudreveError(code, message) {
   );
 }
 
-async function checkAuth(request, env) {
-  const authHeader = request.headers.get('Authorization');
-  if (!authHeader) return false;
-  const token = authHeader.replace('Bearer ', '');
-  const result = await verifySession(token, env);
-  return result.valid;
-}
-
-async function getUserSettings(env) {
-  const row = await env.DB.prepare("SELECT settings_json, preferred_theme, language FROM users WHERE id = '1'").first();
+async function getUserSettings(userId, env) {
+  const row = await env.DB.prepare("SELECT settings_json, preferred_theme, language FROM users WHERE id = ?").bind(userId).first();
   if (!row) return { ...DEFAULT_USER_SETTINGS };
   const settings = row.settings_json ? JSON.parse(row.settings_json) : {};
   return {
@@ -63,14 +53,15 @@ async function getUserSettings(env) {
 }
 
 export async function onRequestGet(context) {
-  const { request, env } = context;
+  const { env, data } = context;
+
+  const userId = data?.userId;
+  if (!userId) {
+    return cloudreveError(40020, 'Invalid session');
+  }
 
   try {
-    if (!(await checkAuth(request, env))) {
-      return cloudreveError(40020, 'Invalid session');
-    }
-
-    const settings = await getUserSettings(env);
+    const settings = await getUserSettings(userId, env);
     return cloudreveSuccess(settings);
   } catch (error) {
     console.error('Get user settings error:', error);
@@ -79,16 +70,17 @@ export async function onRequestGet(context) {
 }
 
 export async function onRequestPatch(context) {
-  const { request, env } = context;
+  const { request, env, data } = context;
+
+  const userId = data?.userId;
+  if (!userId) {
+    return cloudreveError(40020, 'Invalid session');
+  }
 
   try {
-    if (!(await checkAuth(request, env))) {
-      return cloudreveError(40020, 'Invalid session');
-    }
-
     const body = await request.json();
     const now = Date.now();
-    const row = await env.DB.prepare("SELECT * FROM users WHERE id = '1'").first();
+    const row = await env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(userId).first();
 
     if (!row) {
       const initialSettings = { ...DEFAULT_USER_SETTINGS };
@@ -102,8 +94,9 @@ export async function onRequestPatch(context) {
       }
       Object.assign(initialSettings, jsonFields);
       await env.DB.prepare(
-        "INSERT INTO users (id, nickname, language, preferred_theme, settings_json, created_at, updated_at) VALUES ('1', ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO users (id, nickname, language, preferred_theme, settings_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
       ).bind(
+        userId,
         directFields.nickname || '',
         directFields.language || '',
         directFields.preferred_theme || '',
@@ -114,18 +107,18 @@ export async function onRequestPatch(context) {
     }
 
     if (body.nick !== undefined) {
-      await env.DB.prepare("UPDATE users SET nickname = ?, updated_at = ? WHERE id = '1'")
-        .bind(body.nick, now).run();
+      await env.DB.prepare("UPDATE users SET nickname = ?, updated_at = ? WHERE id = ?")
+        .bind(body.nick, now, userId).run();
     }
 
     if (body.language !== undefined) {
-      await env.DB.prepare("UPDATE users SET language = ?, updated_at = ? WHERE id = '1'")
-        .bind(body.language, now).run();
+      await env.DB.prepare("UPDATE users SET language = ?, updated_at = ? WHERE id = ?")
+        .bind(body.language, now, userId).run();
     }
 
     if (body.preferred_theme !== undefined) {
-      await env.DB.prepare("UPDATE users SET preferred_theme = ?, updated_at = ? WHERE id = '1'")
-        .bind(body.preferred_theme, now).run();
+      await env.DB.prepare("UPDATE users SET preferred_theme = ?, updated_at = ? WHERE id = ?")
+        .bind(body.preferred_theme, now, userId).run();
     }
 
     const SETTING_KEYS = [
@@ -140,8 +133,8 @@ export async function onRequestPatch(context) {
           current[key] = body[key];
         }
       }
-      await env.DB.prepare("UPDATE users SET settings_json = ?, updated_at = ? WHERE id = '1'")
-        .bind(JSON.stringify(current), now).run();
+      await env.DB.prepare("UPDATE users SET settings_json = ?, updated_at = ? WHERE id = ?")
+        .bind(JSON.stringify(current), now, userId).run();
     }
 
     return cloudreveSuccess({});

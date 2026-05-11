@@ -15,10 +15,7 @@ function errorResponse(msg, status = 400) {
 }
 
 async function resolveCurrentUserId(request, env) {
-  const userId = await getSessionUserFromRequest(request, env);
-  if (userId) return userId;
-  const row = await env.DB.prepare("SELECT id FROM users LIMIT 1").first();
-  return row ? row.id : null;
+  return await getSessionUserFromRequest(request, env);
 }
 
 export async function onRequestPut(context) {
