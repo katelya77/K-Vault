@@ -9,16 +9,43 @@
  */
 
 import { ensureTablesExist, runAutoMigrations } from '../../../utils/migrations.js';
-import { requireJwtAuth, createJwtAuthResponse } from '../../../utils/jwt-auth.js';
+import { requireJwtAuth } from '../../../utils/jwt-auth.js';
+import { checkAuthentication } from '../../../utils/auth.js';
+
+async function checkDualAuth(context) {
+  const loginAuth = await checkAuthentication(context);
+  if (loginAuth.authenticated) {
+    return { authorized: true };
+  }
+  const jwtAuth = await requireJwtAuth(context.request, context.env);
+  if (jwtAuth.authorized) {
+    return { authorized: true };
+  }
+  if (jwtAuth.statusCode === 503) {
+    return { authorized: false, error: jwtAuth.error, statusCode: 503 };
+  }
+  return { authorized: false, error: '请先登录，或使用 JWT_SECRET 鉴权', statusCode: 401 };
+}
+
+function createDualAuthResponse(error, statusCode = 401) {
+  return new Response(JSON.stringify({
+    success: false,
+    error,
+    errorCode: 'AUTH_REQUIRED'
+  }), {
+    status: statusCode,
+    headers: { 'Content-Type': 'application/json' }
+  });
+}
 
 export async function onRequestGet(context) {
-  const { env } = context;
-  
-  const authResult = await requireJwtAuth(context.request, env);
+  const authResult = await checkDualAuth(context);
   if (!authResult.authorized) {
-    return createJwtAuthResponse(authResult.error, authResult.statusCode);
+    return createDualAuthResponse(authResult.error, authResult.statusCode);
   }
-  
+
+  const { env } = context;
+
   if (!env.DB) {
     return new Response(JSON.stringify({
       success: false,
@@ -29,25 +56,25 @@ export async function onRequestGet(context) {
       headers: { 'Content-Type': 'application/json' }
     });
   }
-  
+
   const url = new URL(context.request.url);
   const action = url.searchParams.get('action');
-  
+
   if (action === 'init') {
     return await initDatabase(env);
   }
-  
+
   return await getDatabaseStatus(env);
 }
 
 export async function onRequestPost(context) {
-  const { env } = context;
-  
-  const authResult = await requireJwtAuth(context.request, env);
+  const authResult = await checkDualAuth(context);
   if (!authResult.authorized) {
-    return createJwtAuthResponse(authResult.error, authResult.statusCode);
+    return createDualAuthResponse(authResult.error, authResult.statusCode);
   }
-  
+
+  const { env } = context;
+
   if (!env.DB) {
     return new Response(JSON.stringify({
       success: false,
@@ -58,7 +85,7 @@ export async function onRequestPost(context) {
       headers: { 'Content-Type': 'application/json' }
     });
   }
-  
+
   return await initDatabase(env);
 }
 

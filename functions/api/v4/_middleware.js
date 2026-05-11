@@ -14,6 +14,7 @@ const PUBLIC_PATHS = [
   '/api/v4/site/config/basic',
   '/api/v4/site/config/login',
   '/api/v4/site/captcha',
+  '/api/v4/admin/init-db',
 ];
 
 function isPublicPath(pathname) {
