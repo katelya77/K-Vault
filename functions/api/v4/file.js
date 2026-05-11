@@ -93,7 +93,7 @@ export async function onRequestGet(context) {
       created_at: fmtTime(row.created_at),
       updated_at: fmtTime(row.deleted_at || row.updated_at),
       owned: true,
-      capability: 'wUKA',
+      capability: isTrash ? 'wUKC' : 'wUKA',
       ...(isTrash ? { metadata: { restore_uri: row.folder_path || '/' } } : {}),
     }));
 
