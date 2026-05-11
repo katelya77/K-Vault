@@ -1,5 +1,6 @@
 /**
  * v4 API - 站点验证码
+ * GET /api/v4/site/captcha
  */
 
 function cloudreveSuccess(data) {
@@ -18,8 +19,10 @@ function cloudreveSuccess(data) {
   );
 }
 
-export async function onRequestGet(context) {
+export async function onRequestGet() {
   return cloudreveSuccess({
     captcha_type: 'none',
+    ticket: '',
+    image: '',
   });
 }

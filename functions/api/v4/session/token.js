@@ -75,9 +75,26 @@ export async function onRequestPost(context) {
     const body = await request.json();
     const email = String(body?.email ?? '').trim();
     const password = String(body?.password ?? body?.pass ?? '');
+    const captchaCode = String(body?.captchaCode ?? '');
+    const captchaId = String(body?.captchaId ?? '');
 
     if (!email || !password) {
       return cloudreveError(400, 'Missing email or password');
+    }
+
+    try {
+      const captchaRow = await env.DB.prepare(
+        "SELECT value FROM config WHERE key = 'login_captcha' LIMIT 1"
+      ).first();
+      const loginCaptcha = captchaRow ? captchaRow.value : 'false';
+      if (loginCaptcha === 'true' || loginCaptcha === '1') {
+        if (!captchaCode || !captchaId) {
+          return cloudreveError(400, '验证码不能为空');
+        }
+        // TODO: 实际校验 captchaCode 与 captchaId 对应的预期值
+      }
+    } catch {
+      // ignore config read error
     }
 
     // 查 DB 用户

@@ -24,6 +24,17 @@ function cloudreveError(code, message) {
   );
 }
 
+async function getCaptchaConfig(env) {
+  try {
+    const row = await env.DB.prepare(
+      "SELECT value FROM config WHERE key = 'reg_captcha' LIMIT 1"
+    ).first();
+    return row ? row.value : 'false';
+  } catch {
+    return 'false';
+  }
+}
+
 export async function onRequestPost(context) {
   const { request, env } = context;
 
@@ -31,6 +42,8 @@ export async function onRequestPost(context) {
     const body = await request.json();
     const email = String(body?.email ?? '').trim().toLowerCase();
     const password = String(body?.password ?? '');
+    const captchaCode = String(body?.captchaCode ?? '');
+    const captchaId = String(body?.captchaId ?? '');
 
     if (!email || !password) {
       return cloudreveError(400, 'Missing email or password');
@@ -38,6 +51,16 @@ export async function onRequestPost(context) {
 
     if (password.length < 6) {
       return cloudreveError(400, 'Password must be at least 6 characters');
+    }
+
+    const regCaptcha = await getCaptchaConfig(env);
+    if (regCaptcha === 'true' || regCaptcha === '1') {
+      if (!captchaCode || !captchaId) {
+        return cloudreveError(400, '验证码不能为空');
+      }
+      // TODO: 实际校验 captchaCode 与 captchaId 对应的预期值
+      // const valid = await verifyCaptcha(env, captchaId, captchaCode);
+      // if (!valid) return cloudreveError(400, '验证码错误');
     }
 
     const allowedEmail = (env.ADMIN_EMAIL || '').trim().toLowerCase();
