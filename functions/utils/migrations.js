@@ -73,7 +73,7 @@ const MIGRATIONS = [
       return result?.count > 0;
     },
     migrate: async (db) => {
-      await db.prepare("CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, nickname TEXT NOT NULL DEFAULT '', email TEXT NOT NULL DEFAULT '', pwd TEXT NOT NULL DEFAULT '', group TEXT NOT NULL DEFAULT 'user', status TEXT NOT NULL DEFAULT 'active', storage_capacity INTEGER NOT NULL DEFAULT 0, storage_used INTEGER NOT NULL DEFAULT 0, preferred_theme TEXT NOT NULL DEFAULT '', language TEXT NOT NULL DEFAULT '', settings_json TEXT NOT NULL DEFAULT '{}', download_secret TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)").run();
+      await db.prepare('CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, nickname TEXT NOT NULL DEFAULT \'\', email TEXT NOT NULL DEFAULT \'\', pwd TEXT NOT NULL DEFAULT \'\', "group" TEXT NOT NULL DEFAULT \'user\', status TEXT NOT NULL DEFAULT \'active\', storage_capacity INTEGER NOT NULL DEFAULT 0, storage_used INTEGER NOT NULL DEFAULT 0, preferred_theme TEXT NOT NULL DEFAULT \'\', language TEXT NOT NULL DEFAULT \'\', settings_json TEXT NOT NULL DEFAULT \'{}\', download_secret TEXT NOT NULL DEFAULT \'\', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)').run();
       const now = Date.now();
       await db.prepare("INSERT OR IGNORE INTO users (id, nickname, email, created_at, updated_at) VALUES ('1', 'admin', '', ?, ?)").bind(now, now).run();
     }
@@ -156,7 +156,7 @@ const MIGRATIONS = [
     migrate: async (db) => {
       const columns = [
         "ALTER TABLE users ADD COLUMN pwd TEXT NOT NULL DEFAULT ''",
-        "ALTER TABLE users ADD COLUMN group TEXT NOT NULL DEFAULT 'user'",
+        "ALTER TABLE users ADD COLUMN \"group\" TEXT NOT NULL DEFAULT 'user'",
         "ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'active'",
         "ALTER TABLE users ADD COLUMN storage_capacity INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE users ADD COLUMN storage_used INTEGER NOT NULL DEFAULT 0"
@@ -169,7 +169,7 @@ const MIGRATIONS = [
           if (!e.message?.includes('duplicate column')) throw e;
         }
       }
-      await db.prepare("UPDATE users SET group = 'admin', status = 'active' WHERE id = '1'").run();
+      await db.prepare("UPDATE users SET \"group\" = 'admin', status = 'active' WHERE id = '1'").run();
     }
   }
 ];
@@ -226,5 +226,5 @@ export async function ensureTablesExist(db) {
   await db.prepare("CREATE TABLE IF NOT EXISTS shares (id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE, file_id TEXT NOT NULL, password_hash TEXT, expires_at INTEGER, max_downloads INTEGER DEFAULT 0, download_count INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL)").run();
   await db.prepare("CREATE TABLE IF NOT EXISTS api_tokens (id TEXT PRIMARY KEY, name TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL, last_used_at INTEGER, enabled INTEGER NOT NULL DEFAULT 1)").run();
   await db.prepare("CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '', updated_at INTEGER NOT NULL)").run();
-  await db.prepare("CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, nickname TEXT NOT NULL DEFAULT '', email TEXT NOT NULL DEFAULT '', pwd TEXT NOT NULL DEFAULT '', group TEXT NOT NULL DEFAULT 'user', status TEXT NOT NULL DEFAULT 'active', storage_capacity INTEGER NOT NULL DEFAULT 0, storage_used INTEGER NOT NULL DEFAULT 0, preferred_theme TEXT NOT NULL DEFAULT '', language TEXT NOT NULL DEFAULT '', settings_json TEXT NOT NULL DEFAULT '{}', download_secret TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)").run();
+  await db.prepare('CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, nickname TEXT NOT NULL DEFAULT \'\', email TEXT NOT NULL DEFAULT \'\', pwd TEXT NOT NULL DEFAULT \'\', "group" TEXT NOT NULL DEFAULT \'user\', status TEXT NOT NULL DEFAULT \'active\', storage_capacity INTEGER NOT NULL DEFAULT 0, storage_used INTEGER NOT NULL DEFAULT 0, preferred_theme TEXT NOT NULL DEFAULT \'\', language TEXT NOT NULL DEFAULT \'\', settings_json TEXT NOT NULL DEFAULT \'{}\', download_secret TEXT NOT NULL DEFAULT \'\', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)').run();
 }

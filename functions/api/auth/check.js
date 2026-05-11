@@ -39,7 +39,7 @@ export async function onRequestGet(context) {
     // 如果已登录，附加用户信息
     if (authResult.authenticated && authResult.userId) {
       const user = await env.DB.prepare(
-        "SELECT id, nickname, email, group, status FROM users WHERE id = ? LIMIT 1"
+        "SELECT id, nickname, email, \"group\", status FROM users WHERE id = ? LIMIT 1"
       ).bind(authResult.userId).first();
       if (user) {
         response.user = {

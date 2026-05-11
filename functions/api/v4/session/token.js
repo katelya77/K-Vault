@@ -82,7 +82,7 @@ export async function onRequestPost(context) {
 
     // 查 DB 用户
     const user = await env.DB.prepare(
-      "SELECT id, email, nickname, pwd, group, status, created_at FROM users WHERE email = ? LIMIT 1"
+      "SELECT id, email, nickname, pwd, \"group\", status, created_at FROM users WHERE email = ? LIMIT 1"
     ).bind(email).first();
 
     if (!user) {

@@ -69,7 +69,7 @@ export async function onRequestPost(context) {
     const nick = email.split('@')[0];
 
     await env.DB.prepare(
-      "INSERT INTO users (id, nickname, email, pwd, group, status, storage_capacity, storage_used, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'active', 0, 0, ?, ?)"
+      "INSERT INTO users (id, nickname, email, pwd, \"group\", status, storage_capacity, storage_used, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'active', 0, 0, ?, ?)"
     ).bind(id, nick, email, pwdHash, group, now, now).run();
 
     return cloudreveSuccess({
