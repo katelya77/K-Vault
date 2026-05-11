@@ -7,7 +7,15 @@ export async function onRequestGet(context) {
       const rows = await env.DB.prepare("SELECT key, value FROM config").all();
       if (rows.results) {
         for (const r of rows.results) {
-          config[r.key] = r.value;
+          let val = r.value;
+          if (typeof val === 'string' && (val.startsWith('[') || val.startsWith('{'))) {
+            try {
+              val = JSON.parse(val);
+            } catch {
+              // keep as string
+            }
+          }
+          config[r.key] = val;
         }
       }
     } catch {
