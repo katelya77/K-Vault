@@ -137,16 +137,18 @@ export async function onRequestPost(context) {
       try {
         if (useTelegram) {
           await env.DB.prepare(
-            "INSERT OR IGNORE INTO files (id, storage_config_id, storage_type, storage_key, storage_file_id, file_name, physical_file_name, file_size, mime_type, folder_id, folder_path, list_type, label, liked, extra_json, created_at, updated_at) VALUES (?, 'default', 'telegram', ?, '', ?, '', ?, ?, '', ?, ?, ?, 0, '{}', ?, ?)"
+            "INSERT OR IGNORE INTO files (id, storage_config_id, storage_type, storage_key, storage_file_id, file_name, physical_file_name, file_size, mime_type, folder_id, folder_path, list_type, label, liked, extra_json, created_at, updated_at) VALUES (?, 'default', 'telegram', ?, ?, ?, '', ?, ?, '', ?, ?, ?, 0, ?, ?, ?)"
           ).bind(
             fileId,
             storageKey,
+            tgFileId,
             session.file_name,
             fileData.byteLength,
             mime,
             folderPath,
             listType,
             'None',
+            JSON.stringify({ telegramMessageId: tgMessageId }),
             now,
             now,
           ).run();

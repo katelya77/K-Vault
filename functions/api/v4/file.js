@@ -5,6 +5,13 @@ function cloudreveSuccess(data) {
   });
 }
 
+function errorResponse(msg, status = 400) {
+  return new Response(JSON.stringify({ code: status, msg, error: msg }), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
 function fmtTime(ts) {
   if (!ts) return new Date().toISOString();
   return new Date(Number(ts)).toISOString();
@@ -133,4 +140,45 @@ export async function onRequestGet(context) {
       parent: null,
     });
   }
+}
+
+export async function onRequestDelete(context) {
+  const { env, request } = context;
+
+  if (!env.DB) {
+    return cloudreveSuccess({ deleted: 0 });
+  }
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return errorResponse('无效的请求体', 400);
+  }
+
+  const uris = body?.uris || [];
+  if (!Array.isArray(uris) || uris.length === 0) {
+    return errorResponse('缺少待删除文件列表', 400);
+  }
+
+  let deletedCount = 0;
+  for (const uri of uris) {
+    const parsed = parseCloudreveUri(uri);
+    const pathParts = parsed.path.split('/').filter(Boolean);
+    if (pathParts.length === 0) continue;
+
+    const fileName = pathParts.pop();
+    const folderPath = pathParts.length === 0 ? '/' : '/' + pathParts.join('/');
+
+    try {
+      const result = await env.DB.prepare(
+        'DELETE FROM files WHERE file_name = ? AND folder_path = ?'
+      ).bind(fileName, folderPath).run();
+      deletedCount += result.meta.changes || 0;
+    } catch (e) {
+      console.error('删除文件失败:', uri, e.message);
+    }
+  }
+
+  return cloudreveSuccess({ deleted: deletedCount });
 }
