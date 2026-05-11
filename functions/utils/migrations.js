@@ -77,6 +77,34 @@ const MIGRATIONS = [
       const now = Date.now();
       await db.prepare("INSERT OR IGNORE INTO users (id, nickname, email, created_at, updated_at) VALUES ('1', 'admin', '', ?, ?)").bind(now, now).run();
     }
+  },
+  {
+    version: 6,
+    name: 'add_config_table',
+    description: '创建 config 表（每行一个设置项），将旧的 app_settings JSON 迁移为独立行',
+    check: async (db) => {
+      const result = await db.prepare(
+        "SELECT COUNT(*) as count FROM pragma_table_info('config') WHERE name='key'"
+      ).first();
+      return result?.count > 0;
+    },
+    migrate: async (db) => {
+      await db.prepare("CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '', updated_at INTEGER NOT NULL)").run();
+      const oldRow = await db.prepare("SELECT value_json FROM app_settings WHERE key = 'admin_settings'").first();
+      if (oldRow && oldRow.value_json) {
+        try {
+          const settings = JSON.parse(oldRow.value_json);
+          const now = Date.now();
+          const stmt = db.prepare("INSERT OR REPLACE INTO config (key, value, updated_at) VALUES (?, ?, ?)");
+          for (const [key, val] of Object.entries(settings)) {
+            await stmt.bind(key, String(val), now).run();
+          }
+          await db.prepare("DELETE FROM app_settings WHERE key = 'admin_settings'").run();
+        } catch (e) {
+          console.error('Migration v6: failed to parse admin_settings JSON', e);
+        }
+      }
+    }
   }
 ];
 
@@ -131,6 +159,6 @@ export async function ensureTablesExist(db) {
   await db.prepare("CREATE TABLE IF NOT EXISTS files (id TEXT PRIMARY KEY, storage_config_id TEXT NOT NULL DEFAULT 'default', storage_type TEXT NOT NULL, storage_key TEXT NOT NULL, storage_file_id TEXT, file_name TEXT NOT NULL, physical_file_name TEXT, file_size INTEGER NOT NULL DEFAULT 0, mime_type TEXT, folder_id TEXT, folder_path TEXT NOT NULL DEFAULT '', list_type TEXT NOT NULL DEFAULT 'None', label TEXT NOT NULL DEFAULT 'None', liked INTEGER NOT NULL DEFAULT 0, extra_json TEXT NOT NULL DEFAULT '{}', deleted_at INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)").run();
   await db.prepare("CREATE TABLE IF NOT EXISTS shares (id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE, file_id TEXT NOT NULL, password_hash TEXT, expires_at INTEGER, max_downloads INTEGER DEFAULT 0, download_count INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL)").run();
   await db.prepare("CREATE TABLE IF NOT EXISTS api_tokens (id TEXT PRIMARY KEY, name TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL, last_used_at INTEGER, enabled INTEGER NOT NULL DEFAULT 1)").run();
-  await db.prepare("CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value_json TEXT NOT NULL, updated_at INTEGER NOT NULL)").run();
+  await db.prepare("CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '', updated_at INTEGER NOT NULL)").run();
   await db.prepare("CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, nickname TEXT NOT NULL DEFAULT '', email TEXT NOT NULL DEFAULT '', preferred_theme TEXT NOT NULL DEFAULT '', language TEXT NOT NULL DEFAULT '', settings_json TEXT NOT NULL DEFAULT '{}', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)").run();
 }

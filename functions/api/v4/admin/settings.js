@@ -91,8 +91,13 @@ async function checkAuth(request, env) {
 }
 
 async function getAllSettings(env) {
-  const row = await env.DB.prepare("SELECT value_json FROM app_settings WHERE key = 'admin_settings'").first();
-  const stored = row ? JSON.parse(row.value_json) : {};
+  const rows = await env.DB.prepare("SELECT key, value FROM config").all();
+  const stored = {};
+  if (rows.results) {
+    for (const r of rows.results) {
+      stored[r.key] = r.value;
+    }
+  }
   return { ...DEFAULT_SETTINGS, ...stored };
 }
 
@@ -131,17 +136,14 @@ export async function onRequestPatch(context) {
     const body = await request.json();
     const updates = body?.settings || body || {};
 
-    const current = await getAllSettings(env);
+    const stmt = env.DB.prepare("INSERT OR REPLACE INTO config (key, value, updated_at) VALUES (?, ?, ?)");
+    const now = Date.now();
 
     for (const key of Object.keys(updates)) {
       if (key in DEFAULT_SETTINGS) {
-        current[key] = String(updates[key]);
+        await stmt.bind(key, String(updates[key]), now).run();
       }
     }
-
-    await env.DB.prepare(
-      "INSERT OR REPLACE INTO app_settings (key, value_json, updated_at) VALUES ('admin_settings', ?, ?)"
-    ).bind(JSON.stringify(current), Date.now()).run();
 
     return cloudreveSuccess({});
   } catch (error) {
