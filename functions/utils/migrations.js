@@ -83,10 +83,12 @@ const MIGRATIONS = [
     name: 'add_config_table',
     description: '创建 config 表（每行一个设置项），将旧的 app_settings JSON 迁移为独立行',
     check: async (db) => {
-      const result = await db.prepare(
-        "SELECT COUNT(*) as count FROM pragma_table_info('config') WHERE name='key'"
+      const tableCheck = await db.prepare(
+        "SELECT COUNT(*) as count FROM pragma_table_info('app_settings') WHERE name='key'"
       ).first();
-      return result?.count > 0;
+      if (!tableCheck?.count) return true;
+      const row = await db.prepare("SELECT COUNT(*) as count FROM app_settings WHERE key = 'admin_settings'").first();
+      return !row || row.count === 0;
     },
     migrate: async (db) => {
       await db.prepare("CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '', updated_at INTEGER NOT NULL)").run();
