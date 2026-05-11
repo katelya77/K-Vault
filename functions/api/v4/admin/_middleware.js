@@ -3,7 +3,7 @@
  * 校验 session → 查 users 表 → group !== 'admin' 返回 403
  */
 
-import { getSessionUserFromRequest } from '../../utils/auth.js';
+import { getSessionUserFromRequest } from '../../../utils/auth.js';
 
 function jsonResponse(body, status = 200) {
   const headers = new Headers({

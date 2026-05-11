@@ -1,4 +1,4 @@
-import { hashPassword } from '../../../../../utils/auth.js';
+import { hashPassword } from '../../../../utils/auth.js';
 
 function cloudreveSuccess(data) {
   return new Response(JSON.stringify({ code: 0, data }), {
