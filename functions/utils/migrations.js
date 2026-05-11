@@ -73,7 +73,7 @@ const MIGRATIONS = [
       return result?.count > 0;
     },
     migrate: async (db) => {
-      await db.prepare("CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, nickname TEXT NOT NULL DEFAULT '', email TEXT NOT NULL DEFAULT '', preferred_theme TEXT NOT NULL DEFAULT '', language TEXT NOT NULL DEFAULT '', settings_json TEXT NOT NULL DEFAULT '{}', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)").run();
+      await db.prepare("CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, nickname TEXT NOT NULL DEFAULT '', email TEXT NOT NULL DEFAULT '', preferred_theme TEXT NOT NULL DEFAULT '', language TEXT NOT NULL DEFAULT '', settings_json TEXT NOT NULL DEFAULT '{}', download_secret TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)").run();
       const now = Date.now();
       await db.prepare("INSERT OR IGNORE INTO users (id, nickname, email, created_at, updated_at) VALUES ('1', 'admin', '', ?, ?)").bind(now, now).run();
     }
@@ -118,6 +118,29 @@ const MIGRATIONS = [
     },
     migrate: async (db) => {
       await db.prepare("UPDATE files SET physical_file_name = file_name WHERE physical_file_name IS NULL OR physical_file_name = ''").run();
+    }
+  },
+  {
+    version: 8,
+    name: 'add_download_secret',
+    description: 'users 表新增 download_secret 列，用于文件下载签名',
+    check: async (db) => {
+      const result = await db.prepare(
+        "SELECT COUNT(*) as count FROM pragma_table_info('users') WHERE name='download_secret'"
+      ).first();
+      return result?.count > 0;
+    },
+    migrate: async (db) => {
+      await db.prepare("ALTER TABLE users ADD COLUMN download_secret TEXT NOT NULL DEFAULT ''").run();
+      const users = await db.prepare("SELECT id FROM users").all();
+      if (users.results) {
+        for (const user of users.results) {
+          const array = new Uint8Array(32);
+          crypto.getRandomValues(array);
+          const secret = Array.from(array, b => b.toString(16).padStart(2, '0')).join('');
+          await db.prepare("UPDATE users SET download_secret = ? WHERE id = ?").bind(secret, user.id).run();
+        }
+      }
     }
   }
 ];

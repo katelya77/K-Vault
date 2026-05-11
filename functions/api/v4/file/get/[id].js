@@ -37,22 +37,27 @@ export async function onRequestGet(context) {
     return errorResponse('D1 (DB) 未绑定', 500);
   }
 
-  if (!env.JWT_SECRET) {
-    return errorResponse('JWT_SECRET 未配置，无法签发下载签名', 500);
-  }
-
   const url = new URL(context.request.url);
   const dlToken = url.searchParams.get('dl_token');
   const expires = url.searchParams.get('expires');
+  const uid = url.searchParams.get('uid');
 
-  if (!dlToken || !expires) {
+  if (!dlToken || !expires || !uid) {
     return new Response(JSON.stringify({ code: 401, msg: '缺少下载签名', error: 'Missing download token' }), {
       status: 401,
       headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
     });
   }
 
-  const authorized = await verifyDownloadToken(fileId, dlToken, expires, env.JWT_SECRET);
+  const userRow = await env.DB.prepare(
+    "SELECT download_secret FROM users WHERE id = ? LIMIT 1"
+  ).bind(uid).first();
+
+  if (!userRow || !userRow.download_secret) {
+    return errorResponse('下载签名无效', 401);
+  }
+
+  const authorized = await verifyDownloadToken(fileId, dlToken, expires, userRow.download_secret, uid);
   if (!authorized) {
     return new Response(JSON.stringify({ code: 401, msg: '下载签名无效或已过期', error: 'Invalid or expired download token' }), {
       status: 401,

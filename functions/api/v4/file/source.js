@@ -1,4 +1,4 @@
-import { generateDownloadToken } from '../../../utils/auth.js';
+import { generateDownloadToken, ensureUserDownloadSecret, getSessionFromCookie, getBearerToken, verifySession } from '../../../utils/auth.js';
 
 function cloudreveSuccess(data) {
   return new Response(JSON.stringify({ code: 0, data }), {
@@ -14,6 +14,15 @@ function errorResponse(msg, status = 400) {
   });
 }
 
+async function resolveCurrentUserId(request, env) {
+  const token = getSessionFromCookie(request) || getBearerToken(request);
+  if (token && await verifySession(token, env)) {
+    const row = await env.DB.prepare("SELECT id FROM users LIMIT 1").first();
+    if (row) return row.id;
+  }
+  return null;
+}
+
 export async function onRequestPut(context) {
   const { env, request } = context;
 
@@ -21,9 +30,15 @@ export async function onRequestPut(context) {
     return errorResponse('D1 (DB) 未绑定', 500);
   }
 
-  if (!env.JWT_SECRET) {
-    return errorResponse('JWT_SECRET 未配置，无法签发下载签名', 500);
+  const uid = await resolveCurrentUserId(request, env);
+  if (!uid) {
+    return new Response(JSON.stringify({ code: 401, msg: '请先登录', error: 'Login required' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
+
+  const secret = await ensureUserDownloadSecret(env, uid);
 
   try {
     const body = await request.json();
@@ -61,8 +76,8 @@ export async function onRequestPut(context) {
       }
 
       if (row) {
-        const dlToken = await generateDownloadToken(row.id, row.file_size || 0, env.JWT_SECRET);
-        const fileUrl = baseUrl + '/api/v4/file/get/' + row.id + `?dl_token=${dlToken.token}&expires=${dlToken.expires}`;
+        const dlToken = await generateDownloadToken(row.id, row.file_size || 0, secret, uid);
+        const fileUrl = baseUrl + '/api/v4/file/get/' + row.id + `?dl_token=${dlToken.token}&expires=${dlToken.expires}&uid=${dlToken.uid}`;
         results.push({
           id: row.id,
           file_url: fileUrl,

@@ -190,21 +190,40 @@ export function getBearerToken(request) {
 }
 
 /**
+ * 确保用户有 download_secret，没有则自动生成 32 字节随机密钥
+ * 密钥仅存 DB，不暴露给前端，不依赖任何环境变量
+ */
+export async function ensureUserDownloadSecret(env, userId) {
+  const row = await env.DB.prepare(
+    "SELECT download_secret FROM users WHERE id = ? LIMIT 1"
+  ).bind(userId).first();
+
+  if (row && row.download_secret) {
+    return row.download_secret;
+  }
+
+  const array = new Uint8Array(32);
+  crypto.getRandomValues(array);
+  const secret = Array.from(array, b => b.toString(16).padStart(2, '0')).join('');
+
+  await env.DB.prepare(
+    "UPDATE users SET download_secret = ? WHERE id = ?"
+  ).bind(secret, userId).run();
+
+  return secret;
+}
+
+/**
  * 生成文件下载临时令牌（HMAC-SHA256 签名）
- * 过期时间根据文件大小动态计算，平衡安全性与可用性
- *
- * 计算公式：
- *   有效秒数 = 90 + max(180, fileSize / 102400) × 1.6
- *   上限 86400 秒（24小时），下限 90 秒
- *
- * 参考值：100KB/s 最低网速，180s 最小保护，1.6 安全系数，90s 基础缓冲
+ * 签名数据绑定 fileId + expires + uid，防止 token 串用
  *
  * @param {string} fileId - 文件 ID
  * @param {number} fileSize - 文件大小（字节）
- * @param {string} secret - 签名密钥（JWT_SECRET）
- * @returns {Promise<{token: string, expires: number}>}
+ * @param {string} secret - 用户专属 download_secret
+ * @param {string} uid - 用户 ID
+ * @returns {Promise<{token: string, expires: number, uid: string}>}
  */
-export async function generateDownloadToken(fileId, fileSize, secret) {
+export async function generateDownloadToken(fileId, fileSize, secret, uid) {
   const BASE_BUFFER = 90;
   const MIN_SPEED = 102400;
   const SAFETY_FACTOR = 1.6;
@@ -213,7 +232,7 @@ export async function generateDownloadToken(fileId, fileSize, secret) {
 
   const ttl = BASE_BUFFER + Math.max(MIN_TTL, Math.ceil(fileSize / MIN_SPEED)) * SAFETY_FACTOR;
   const expires = Math.floor(Date.now() / 1000) + Math.min(ttl, MAX_TTL);
-  const data = `${fileId}:${expires}`;
+  const data = `${fileId}:${expires}:${uid}`;
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey(
     'raw', encoder.encode(secret),
@@ -222,7 +241,7 @@ export async function generateDownloadToken(fileId, fileSize, secret) {
   );
   const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(data));
   const sigHex = Array.from(new Uint8Array(sig), b => b.toString(16).padStart(2, '0')).join('');
-  return { token: sigHex, expires };
+  return { token: sigHex, expires, uid };
 }
 
 /**
@@ -230,14 +249,15 @@ export async function generateDownloadToken(fileId, fileSize, secret) {
  * @param {string} fileId - 文件 ID
  * @param {string} token - 待验证的令牌
  * @param {string} expires - 过期时间戳
- * @param {string} secret - 签名密钥（JWT_SECRET）
+ * @param {string} secret - 用户专属 download_secret
+ * @param {string} uid - 用户 ID
  * @returns {Promise<boolean>}
  */
-export async function verifyDownloadToken(fileId, token, expires, secret) {
+export async function verifyDownloadToken(fileId, token, expires, secret, uid) {
   const now = Math.floor(Date.now() / 1000);
   if (now > parseInt(expires, 10)) return false;
 
-  const data = `${fileId}:${expires}`;
+  const data = `${fileId}:${expires}:${uid}`;
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey(
     'raw', encoder.encode(secret),

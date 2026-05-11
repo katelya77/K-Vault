@@ -1,4 +1,4 @@
-import { generateDownloadToken } from '../../../utils/auth.js';
+import { generateDownloadToken, ensureUserDownloadSecret, getSessionFromCookie, getBearerToken, verifySession } from '../../../utils/auth.js';
 
 function cloudreveSuccess(data) {
   return new Response(JSON.stringify({ code: 0, data }), {
@@ -27,6 +27,15 @@ function parseUri(raw) {
   return { fileName: parts.pop() || '', folderPath: parts.length > 0 ? '/' + parts.join('/') : '' };
 }
 
+async function resolveCurrentUserId(request, env) {
+  const token = getSessionFromCookie(request) || getBearerToken(request);
+  if (token && await verifySession(token, env)) {
+    const row = await env.DB.prepare("SELECT id FROM users LIMIT 1").first();
+    if (row) return row.id;
+  }
+  return null;
+}
+
 export async function onRequestPost(context) {
   const { env, request } = context;
 
@@ -34,9 +43,15 @@ export async function onRequestPost(context) {
     return errorResponse('D1 (DB) 未绑定', 500);
   }
 
-  if (!env.JWT_SECRET) {
-    return errorResponse('JWT_SECRET 未配置，无法签发下载签名', 500);
+  const uid = await resolveCurrentUserId(request, env);
+  if (!uid) {
+    return new Response(JSON.stringify({ code: 401, msg: '请先登录', error: 'Login required' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
+
+  const secret = await ensureUserDownloadSecret(env, uid);
 
   try {
     const body = await request.json();
@@ -61,9 +76,9 @@ export async function onRequestPost(context) {
       }
 
       if (row) {
-        const dlToken = await generateDownloadToken(row.id, row.file_size || 0, env.JWT_SECRET);
+        const dlToken = await generateDownloadToken(row.id, row.file_size || 0, secret, uid);
         results.push({
-          url: baseUrl + '/api/v4/file/get/' + row.id + `?dl_token=${dlToken.token}&expires=${dlToken.expires}`,
+          url: baseUrl + '/api/v4/file/get/' + row.id + `?dl_token=${dlToken.token}&expires=${dlToken.expires}&uid=${dlToken.uid}`,
           name: row.file_name,
         });
       } else {
