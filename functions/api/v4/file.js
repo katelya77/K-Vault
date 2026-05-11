@@ -1,3 +1,5 @@
+import { buildTelegramBotApiUrl } from '../../utils/telegram.js';
+
 function cloudreveSuccess(data) {
   return new Response(JSON.stringify({ code: 0, data }), {
     status: 200,
@@ -185,7 +187,10 @@ export async function onRequestDelete(context) {
     return errorResponse('缺少待删除文件列表', 400);
   }
 
+  const skipSoftDelete = body?.skip_soft_delete === true;
+  const now = Date.now();
   let deletedCount = 0;
+
   for (const uri of uris) {
     const parsed = parseCloudreveUri(uri);
     const pathParts = parsed.path.split('/').filter(Boolean);
@@ -195,14 +200,47 @@ export async function onRequestDelete(context) {
     const folderPath = pathParts.length === 0 ? '/' : '/' + pathParts.join('/');
 
     try {
-      const result = await env.DB.prepare(
-        'DELETE FROM files WHERE file_name = ? AND folder_path = ?'
-      ).bind(fileName, folderPath).run();
-      deletedCount += result.meta.changes || 0;
+      if (skipSoftDelete) {
+        const row = await env.DB.prepare(
+          'SELECT id, storage_type, storage_file_id, extra_json FROM files WHERE file_name = ? AND folder_path = ?'
+        ).bind(fileName, folderPath).first();
+
+        if (!row) continue;
+
+        await deleteFromTargetStorage(env, row);
+        await env.DB.prepare('DELETE FROM files WHERE id = ?').bind(row.id).run();
+        deletedCount++;
+      } else {
+        const result = await env.DB.prepare(
+          'UPDATE files SET deleted_at = ? WHERE file_name = ? AND folder_path = ? AND deleted_at IS NULL'
+        ).bind(now, fileName, folderPath).run();
+        if (result.meta.changes > 0) deletedCount++;
+      }
     } catch (e) {
       console.error('删除文件失败:', uri, e.message);
     }
   }
 
   return cloudreveSuccess({ deleted: deletedCount });
+}
+
+async function deleteFromTargetStorage(env, row) {
+  const type = row.storage_type;
+  const extraJson = row.extra_json || '{}';
+
+  try {
+    if (type === 'telegram') {
+      const extra = JSON.parse(extraJson);
+      const messageId = extra.telegramMessageId;
+      if (messageId && env.TG_Bot_Token && env.TG_Chat_ID) {
+        await fetch(buildTelegramBotApiUrl(env, 'deleteMessage'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chat_id: env.TG_Chat_ID, message_id: messageId }),
+        });
+      }
+    }
+  } catch (e) {
+    console.error('删除目标存储文件失败:', type, e.message);
+  }
 }
