@@ -198,8 +198,6 @@ export async function onRequestPost(context) {
     }
 
     if (useTelegram) {
-      const directLink = buildTelegramDirectLink(env, fileId);
-      
       let uploaderInfo = '';
       if (userId) {
         try {
@@ -223,7 +221,6 @@ export async function onRequestPost(context) {
         {
           chatId: env.TG_Chat_ID,
           replyToMessageId: tgMessageId,
-          directLink,
           fileId: tgFileId,
           messageId: tgMessageId,
           fileName: session.file_name,
@@ -231,7 +228,6 @@ export async function onRequestPost(context) {
           text: [
             `名称: ${session.file_name}`,
             `大小: ${(fileData.byteLength / 1024).toFixed(2)} KB`,
-            `下载链接: ${directLink}`,
             `文件ID: ${tgFileId}`,
             `消息ID: ${tgMessageId}`,
             ...(uploaderInfo ? [uploaderInfo] : []),
