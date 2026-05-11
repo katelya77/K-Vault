@@ -1,4 +1,4 @@
-import { invalidateStorageHealth } from '../../../../utils/storage-health.js';
+import { invalidateStorageHealth } from '../../../../../utils/storage-health.js';
 
 function cloudreveSuccess(data) {
   return new Response(JSON.stringify({ code: 0, data }), {
