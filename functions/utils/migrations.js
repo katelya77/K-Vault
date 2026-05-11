@@ -107,6 +107,18 @@ const MIGRATIONS = [
         }
       }
     }
+  },
+  {
+    version: 7,
+    name: 'backfill_physical_file_name',
+    description: '回填已有文件的 physical_file_name（无混淆的旧文件设为同名），兼容文件名混淆功能',
+    check: async (db) => {
+      const row = await db.prepare("SELECT COUNT(*) as count FROM files WHERE (physical_file_name IS NULL OR physical_file_name = '') AND storage_type != ''").first();
+      return !row || row.count === 0;
+    },
+    migrate: async (db) => {
+      await db.prepare("UPDATE files SET physical_file_name = file_name WHERE physical_file_name IS NULL OR physical_file_name = ''").run();
+    }
   }
 ];
 

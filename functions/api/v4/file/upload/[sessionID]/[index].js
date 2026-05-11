@@ -1,5 +1,6 @@
 import { invalidateStorageHealth, getStorageHealth } from '../../../../../utils/storage-health.js';
 import { buildTelegramBotApiUrl, getTelegramUploadMethodAndField, pickTelegramFileId, buildTelegramDirectLink, sendTelegramUploadNotice } from '../../../../../utils/telegram.js';
+import { obfuscateFileName, getObfuscationConfig } from '../../../../../utils/obfuscate.js';
 
 function cloudreveSuccess(data) {
   return new Response(JSON.stringify({ code: 0, data }), {
@@ -90,6 +91,15 @@ export async function onRequestPost(context) {
 
     const useTelegram = (channel === 'telegram');
 
+    const obfuscationConfig = getObfuscationConfig(env);
+    let physicalFileName = '';
+    let uploadFileName = session.file_name;
+    if (obfuscationConfig.enabled) {
+      const obfuscated = await obfuscateFileName(session.file_name, { ...obfuscationConfig, env });
+      physicalFileName = obfuscated.physicalFileName;
+      uploadFileName = physicalFileName;
+    }
+
     let storageType = 'd1';
     let storageKey = '';
     let tgFileId = '';
@@ -101,7 +111,7 @@ export async function onRequestPost(context) {
       formData.append('chat_id', env.TG_Chat_ID);
       const { method: apiEndpoint, field } = getTelegramUploadMethodAndField(mime || 'application/octet-stream');
       const blob = new Blob([fileData], { type: mime || 'application/octet-stream' });
-      formData.append(field, blob, session.file_name);
+      formData.append(field, blob, uploadFileName);
 
       const tgResp = await fetch(buildTelegramBotApiUrl(env, apiEndpoint), {
         method: 'POST',
@@ -137,12 +147,13 @@ export async function onRequestPost(context) {
       try {
         if (useTelegram) {
           await env.DB.prepare(
-            "INSERT OR IGNORE INTO files (id, storage_config_id, storage_type, storage_key, storage_file_id, file_name, physical_file_name, file_size, mime_type, folder_id, folder_path, list_type, label, liked, extra_json, created_at, updated_at) VALUES (?, 'default', 'telegram', ?, ?, ?, '', ?, ?, '', ?, ?, ?, 0, ?, ?, ?)"
+            "INSERT OR IGNORE INTO files (id, storage_config_id, storage_type, storage_key, storage_file_id, file_name, physical_file_name, file_size, mime_type, folder_id, folder_path, list_type, label, liked, extra_json, created_at, updated_at) VALUES (?, 'default', 'telegram', ?, ?, ?, ?, ?, ?, '', ?, ?, ?, 0, ?, ?, ?)"
           ).bind(
             fileId,
             storageKey,
             tgFileId,
             session.file_name,
+            physicalFileName,
             fileData.byteLength,
             mime,
             folderPath,
@@ -154,10 +165,11 @@ export async function onRequestPost(context) {
           ).run();
         } else {
           await env.DB.prepare(
-            "INSERT OR IGNORE INTO files (id, storage_config_id, storage_type, storage_key, storage_file_id, file_name, physical_file_name, file_size, mime_type, folder_id, folder_path, list_type, label, liked, extra_json, created_at, updated_at, data) VALUES (?, 'default', 'd1', '', '', ?, '', ?, ?, '', ?, ?, ?, 0, '{}', ?, ?, ?)"
+            "INSERT OR IGNORE INTO files (id, storage_config_id, storage_type, storage_key, storage_file_id, file_name, physical_file_name, file_size, mime_type, folder_id, folder_path, list_type, label, liked, extra_json, created_at, updated_at, data) VALUES (?, 'default', 'd1', '', '', ?, ?, ?, ?, '', ?, ?, ?, 0, '{}', ?, ?, ?)"
           ).bind(
             fileId,
             session.file_name,
+            physicalFileName,
             fileData.byteLength,
             mime,
             folderPath,

@@ -65,7 +65,7 @@ export async function onRequestGet(context) {
 
   try {
     const row = await env.DB.prepare(
-      'SELECT id, file_name, mime_type, file_size, storage_key, storage_type, storage_file_id, data FROM files WHERE id = ? LIMIT 1'
+      'SELECT id, file_name, physical_file_name, mime_type, file_size, storage_key, storage_type, storage_file_id, data FROM files WHERE id = ? LIMIT 1'
     ).bind(fileId).first();
 
     if (!row) {
@@ -119,7 +119,7 @@ export async function onRequestGet(context) {
       });
     }
 
-    // 3. Telegram 存储 — 从 Bot API 获取并重定向
+    // 3. Telegram 存储 — 从 Bot API 获取文件，代理返回（确保 Content-Disposition 用原名）
     if (row.storage_type === 'telegram' && row.storage_key && env.TG_Bot_Token) {
       const tgApiUrl = buildTelegramBotApiUrl(env, 'getFile') + '?file_id=' + encodeURIComponent(row.storage_key);
       const tgResp = await fetch(tgApiUrl);
@@ -127,13 +127,23 @@ export async function onRequestGet(context) {
 
       if (tgData.ok && tgData.result?.file_path) {
         const fileUrl = buildTelegramFileUrl(env, tgData.result.file_path);
-        return new Response(null, {
-          status: 302,
-          headers: {
-            'Location': fileUrl,
-            'Cache-Control': 'no-store',
-            'Access-Control-Allow-Origin': '*',
-          },
+        const upstream = await fetch(fileUrl);
+        if (!upstream.ok) {
+          return errorResponse('从 Telegram 获取文件失败', upstream.status);
+        }
+
+        const displayName = row.file_name;
+        const headers = new Headers();
+        headers.set('Content-Type', contentType);
+        headers.set('Content-Length', upstream.headers.get('Content-Length') || '');
+        headers.set('Cache-Control', 'public, max-age=31536000');
+        headers.set('Accept-Ranges', 'bytes');
+        headers.set('Content-Disposition', 'inline; filename="' + displayName + '"');
+        headers.set('Access-Control-Allow-Origin', '*');
+
+        return new Response(upstream.body, {
+          status: 200,
+          headers,
         });
       }
     }
