@@ -53,7 +53,8 @@ async function checkAuth(request, env) {
   const authHeader = request.headers.get('Authorization');
   if (!authHeader) return false;
   const token = authHeader.replace('Bearer ', '');
-  return await verifySession(token, env);
+  const result = await verifySession(token, env);
+  return result.valid;
 }
 
 async function getUser(env) {

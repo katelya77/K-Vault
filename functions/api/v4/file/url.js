@@ -1,4 +1,4 @@
-import { generateDownloadToken, ensureUserDownloadSecret, getSessionFromCookie, getBearerToken, verifySession } from '../../../utils/auth.js';
+import { generateDownloadToken, ensureUserDownloadSecret, getSessionUserFromRequest } from '../../../utils/auth.js';
 
 function cloudreveSuccess(data) {
   return new Response(JSON.stringify({ code: 0, data }), {
@@ -28,12 +28,10 @@ function parseUri(raw) {
 }
 
 async function resolveCurrentUserId(request, env) {
-  const token = getSessionFromCookie(request) || getBearerToken(request);
-  if (token && await verifySession(token, env)) {
-    const row = await env.DB.prepare("SELECT id FROM users LIMIT 1").first();
-    if (row) return row.id;
-  }
-  return null;
+  const userId = await getSessionUserFromRequest(request, env);
+  if (userId) return userId;
+  const row = await env.DB.prepare("SELECT id FROM users LIMIT 1").first();
+  return row ? row.id : null;
 }
 
 export async function onRequestPost(context) {

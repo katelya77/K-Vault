@@ -39,7 +39,7 @@ function jsonResponse(body, status = 200) {
 }
 
 export async function onRequest(context) {
-  const { request } = context;
+  const { request, data } = context;
   
   if (request.method === 'OPTIONS') {
     return new Response(null, {
@@ -55,6 +55,7 @@ export async function onRequest(context) {
       if (!authResult.authenticated) {
         return jsonResponse({ code: 401, msg: '请先登录', error: 'Login required' }, 401);
       }
+      data.userId = authResult.userId;
     }
   }
   

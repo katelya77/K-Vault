@@ -44,44 +44,35 @@ function canUseMemoryStorage(env) {
 }
 
 /**
- * 验证会话令牌
+ * 验证会话令牌 — 返回 { valid, userId }
  */
 export async function verifySession(sessionToken, env) {
-  if (!sessionToken) return false;
+  if (!sessionToken) return { valid: false, userId: null };
   
   try {
-    // 如果有 KV，使用 KV 存储
+    let sessionData = null;
+
     if (env.img_url) {
-      const sessionData = await env.img_url.get(`session:${sessionToken}`, { type: 'json' });
-      if (!sessionData) return false;
-      
-      if (Date.now() > sessionData.expiresAt) {
-        await env.img_url.delete(`session:${sessionToken}`);
-        return false;
-      }
-      
-      return true;
+      sessionData = await env.img_url.get(`session:${sessionToken}`, { type: 'json' });
+    } else if (canUseMemoryStorage(env)) {
+      sessionData = memorySessions.get(sessionToken);
+    } else {
+      console.error('Session storage not configured.');
+      return { valid: false, userId: null };
     }
-    
-    // 检查是否允许内存存储
-    if (!canUseMemoryStorage(env)) {
-      console.error('Session storage not configured. Please bind KV namespace (img_url) or set ALLOW_MEMORY_SESSION=true for development.');
-      return false;
-    }
-    
-    // 使用内存存储（本地开发）
-    const sessionData = memorySessions.get(sessionToken);
-    if (!sessionData) return false;
-    
+
+    if (!sessionData) return { valid: false, userId: null };
+
     if (Date.now() > sessionData.expiresAt) {
-      memorySessions.delete(sessionToken);
-      return false;
+      if (env.img_url) await env.img_url.delete(`session:${sessionToken}`);
+      else memorySessions.delete(sessionToken);
+      return { valid: false, userId: null };
     }
-    
-    return true;
+
+    return { valid: true, userId: sessionData.userId || null };
   } catch (e) {
     console.error('Session verify error:', e);
-    return false;
+    return { valid: false, userId: null };
   }
 }
 
@@ -147,6 +138,16 @@ export function createLegacyClearSessionCookieHeader() {
  */
 export function isAuthRequired(_env) {
   return true;
+}
+
+/**
+ * 从请求中解析会话 → 返回 userId（便捷方法）
+ */
+export async function getSessionUserFromRequest(request, env) {
+  const token = getSessionFromCookie(request) || getBearerToken(request);
+  if (!token) return null;
+  const result = await verifySession(token, env);
+  return result.valid ? result.userId : null;
 }
 
 /**
