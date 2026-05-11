@@ -199,6 +199,26 @@ export async function onRequestPost(context) {
 
     if (useTelegram) {
       const directLink = buildTelegramDirectLink(env, fileId);
+      
+      let uploaderInfo = '';
+      if (userId) {
+        try {
+          const userRow = await env.DB.prepare(
+            "SELECT nickname, email FROM users WHERE id = ?"
+          ).bind(userId).first();
+          if (userRow) {
+            const parts = [];
+            if (userRow.nickname) parts.push(userRow.nickname);
+            if (userRow.email) parts.push(userRow.email);
+            if (parts.length > 0) {
+              uploaderInfo = `上传者: ${parts.join(' / ')}`;
+            }
+          }
+        } catch (e) {
+          uploaderInfo = `上传者: ${userId}`;
+        }
+      }
+      
       await sendTelegramUploadNotice(
         {
           chatId: env.TG_Chat_ID,
@@ -214,7 +234,7 @@ export async function onRequestPost(context) {
             `下载链接: ${directLink}`,
             `文件ID: ${tgFileId}`,
             `消息ID: ${tgMessageId}`,
-            ...(userId ? [`上传者: ${userId}`] : []),
+            ...(uploaderInfo ? [uploaderInfo] : []),
           ].join('\n'),
         },
         env,
