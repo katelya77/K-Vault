@@ -51,9 +51,14 @@ async function checkAuth(request, env) {
   return await verifySession(token, env);
 }
 
-async function getSettings(env) {
-  const stored = await env.img_url.get('user:settings', { type: 'json' });
-  return { ...DEFAULT_USER_SETTINGS, ...(stored || {}) };
+async function getUserSettings(env) {
+  const row = await env.DB.prepare("SELECT settings_json, preferred_theme, language FROM users WHERE id = '1'").first();
+  if (!row) return { ...DEFAULT_USER_SETTINGS };
+  const settings = row.settings_json ? JSON.parse(row.settings_json) : {};
+  return {
+    ...DEFAULT_USER_SETTINGS,
+    ...settings,
+  };
 }
 
 export async function onRequestGet(context) {
@@ -64,11 +69,11 @@ export async function onRequestGet(context) {
       return cloudreveError(40020, 'Invalid session');
     }
 
-    const settings = await getSettings(env);
+    const settings = await getUserSettings(env);
     return cloudreveSuccess(settings);
   } catch (error) {
     console.error('Get user settings error:', error);
-    return cloudreveSuccess(DEFAULT_USER_SETTINGS);
+    return cloudreveSuccess({ ...DEFAULT_USER_SETTINGS });
   }
 }
 
@@ -81,28 +86,61 @@ export async function onRequestPatch(context) {
     }
 
     const body = await request.json();
+    const now = Date.now();
+    const row = await env.DB.prepare("SELECT * FROM users WHERE id = '1'").first();
+
+    if (!row) {
+      const initialSettings = { ...DEFAULT_USER_SETTINGS };
+      const directFields = {};
+      const jsonFields = {};
+      for (const [key, value] of Object.entries(body)) {
+        if (key === 'nick') directFields.nickname = value;
+        else if (key === 'language') directFields.language = value;
+        else if (key === 'preferred_theme') directFields.preferred_theme = value;
+        else jsonFields[key] = value;
+      }
+      Object.assign(initialSettings, jsonFields);
+      await env.DB.prepare(
+        "INSERT INTO users (id, nickname, language, preferred_theme, settings_json, created_at, updated_at) VALUES ('1', ?, ?, ?, ?, ?, ?)"
+      ).bind(
+        directFields.nickname || '',
+        directFields.language || '',
+        directFields.preferred_theme || '',
+        JSON.stringify(initialSettings),
+        now, now
+      ).run();
+      return cloudreveSuccess({});
+    }
 
     if (body.nick !== undefined) {
-      const profile = await env.img_url.get('user:profile', { type: 'json' }) || {};
-      profile.nickname = body.nick;
-      await env.img_url.put('user:profile', JSON.stringify(profile));
+      await env.DB.prepare("UPDATE users SET nickname = ?, updated_at = ? WHERE id = '1'")
+        .bind(body.nick, now).run();
+    }
+
+    if (body.language !== undefined) {
+      await env.DB.prepare("UPDATE users SET language = ?, updated_at = ? WHERE id = '1'")
+        .bind(body.language, now).run();
+    }
+
+    if (body.preferred_theme !== undefined) {
+      await env.DB.prepare("UPDATE users SET preferred_theme = ?, updated_at = ? WHERE id = '1'")
+        .bind(body.preferred_theme, now).run();
     }
 
     const SETTING_KEYS = [
-      'language', 'preferred_theme',
       'version_retention_enabled', 'version_retention_ext', 'version_retention_max',
       'disable_view_sync', 'share_links_in_profile',
     ];
-
-    const hasSettingKeys = SETTING_KEYS.some(k => body[k] !== undefined);
-    if (hasSettingKeys) {
-      const current = await getSettings(env);
+    const hasJsonKeys = SETTING_KEYS.some(k => body[k] !== undefined);
+    if (hasJsonKeys) {
+      const current = row.settings_json ? JSON.parse(row.settings_json) : {};
       for (const key of SETTING_KEYS) {
         if (body[key] !== undefined) {
           current[key] = body[key];
         }
       }
-      await env.img_url.put('user:settings', JSON.stringify(current));
+      await env.DB.prepare("UPDATE users SET settings_json = ?, updated_at = ? WHERE id = '1'")
+        .bind(JSON.stringify(current), now).run();
     }
 
     return cloudreveSuccess({});

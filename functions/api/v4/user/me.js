@@ -45,6 +45,10 @@ function cloudreveError(code, message) {
   );
 }
 
+function fmtTime(ts) {
+  return new Date(ts).toISOString();
+}
+
 async function checkAuth(request, env) {
   const authHeader = request.headers.get('Authorization');
   if (!authHeader) return false;
@@ -52,13 +56,19 @@ async function checkAuth(request, env) {
   return await verifySession(token, env);
 }
 
-async function getProfile(env) {
-  const stored = await env.img_url.get('user:profile', { type: 'json' });
-  const configuredUsername = env.BASIC_USER || 'admin';
-  const configuredEmail = env.ADMIN_EMAIL || '';
+async function getUser(env) {
+  const row = await env.DB.prepare("SELECT * FROM users WHERE id = '1'").first();
+  if (!row) return null;
+  const settings = row.settings_json ? JSON.parse(row.settings_json) : {};
   return {
-    nickname: stored?.nickname || configuredUsername,
-    email: stored?.email || configuredEmail || `${configuredUsername}@localhost`,
+    id: row.id,
+    email: row.email || '',
+    nickname: row.nickname || '',
+    preferred_theme: row.preferred_theme || '',
+    language: row.language || '',
+    disable_view_sync: settings.disable_view_sync || false,
+    share_links_in_profile: settings.share_links_in_profile || 0,
+    created_at: fmtTime(row.created_at),
   };
 }
 
@@ -70,13 +80,15 @@ export async function onRequestGet(context) {
       return cloudreveError(40020, 'Invalid session');
     }
 
-    const profile = await getProfile(env);
+    const user = await getUser(env) || {
+      id: '1',
+      email: '',
+      nickname: env.BASIC_USER || 'admin',
+      created_at: new Date().toISOString(),
+    };
 
     return cloudreveSuccess({
-      id: '1',
-      email: profile.email,
-      nickname: profile.nickname,
-      created_at: new Date().toISOString(),
+      ...user,
       group: {
         id: 'admin',
         name: 'Administrator',
@@ -98,18 +110,25 @@ export async function onRequestPut(context) {
     }
 
     const body = await request.json();
-    const current = await env.img_url.get('user:profile', { type: 'json' }) || {};
+    const now = Date.now();
 
-    if (body.nickname !== undefined) current.nickname = body.nickname;
-    if (body.email !== undefined) current.email = body.email;
+    const row = await env.DB.prepare("SELECT * FROM users WHERE id = '1'").first();
 
-    await env.img_url.put('user:profile', JSON.stringify(current));
+    if (row) {
+      const nickname = body.nickname !== undefined ? body.nickname : row.nickname;
+      const email = body.email !== undefined ? body.email : row.email;
+      await env.DB.prepare("UPDATE users SET nickname = ?, email = ?, updated_at = ? WHERE id = '1'")
+        .bind(nickname, email, now).run();
+    } else {
+      await env.DB.prepare("INSERT INTO users (id, nickname, email, created_at, updated_at) VALUES ('1', ?, ?, ?, ?)")
+        .bind(body.nickname || '', body.email || '', now, now).run();
+    }
 
     return cloudreveSuccess({
       id: '1',
-      email: current.email || '',
-      nickname: current.nickname || '',
-      updated_at: new Date().toISOString(),
+      email: body.email || '',
+      nickname: body.nickname || '',
+      updated_at: fmtTime(now),
     });
   } catch (error) {
     console.error('Update user error:', error);

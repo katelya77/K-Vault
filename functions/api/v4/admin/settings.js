@@ -91,8 +91,9 @@ async function checkAuth(request, env) {
 }
 
 async function getAllSettings(env) {
-  const stored = await env.img_url.get('admin:settings', { type: 'json' });
-  return { ...DEFAULT_SETTINGS, ...(stored || {}) };
+  const row = await env.DB.prepare("SELECT value_json FROM app_settings WHERE key = 'admin_settings'").first();
+  const stored = row ? JSON.parse(row.value_json) : {};
+  return { ...DEFAULT_SETTINGS, ...stored };
 }
 
 export async function onRequestPost(context) {
@@ -138,7 +139,9 @@ export async function onRequestPatch(context) {
       }
     }
 
-    await env.img_url.put('admin:settings', JSON.stringify(current));
+    await env.DB.prepare(
+      "INSERT OR REPLACE INTO app_settings (key, value_json, updated_at) VALUES ('admin_settings', ?, ?)"
+    ).bind(JSON.stringify(current), Date.now()).run();
 
     return cloudreveSuccess({});
   } catch (error) {
