@@ -94,7 +94,7 @@ export async function onRequestPost(context) {
     let tgFileId = '';
 
     if (useTelegram) {
-      const { buildTelegramBotApiUrl, getTelegramUploadMethodAndField, pickTelegramFileId } = await import('../../../../utils/telegram.js');
+      const { buildTelegramBotApiUrl, getTelegramUploadMethodAndField, pickTelegramFileId } = await import('../../../../../utils/telegram.js');
 
       const formData = new FormData();
       formData.append('chat_id', env.TG_Chat_ID);
