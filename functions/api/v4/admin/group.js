@@ -5,21 +5,25 @@ function cloudreveSuccess(data) {
   });
 }
 
-export async function onRequestGet(context) {
-  const groups = [
-    {
-      id: 'admin',
-      name: '管理员',
-      permission_actions: ['*'],
-      max_storage: 0,
-    },
-    {
-      id: 'user',
-      name: '用户',
-      permission_actions: [],
-      max_storage: 0,
-    },
-  ];
+const GROUPS = [
+  {
+    id: 'admin',
+    name: '管理员',
+    permission_actions: ['*'],
+    max_storage: 0,
+  },
+  {
+    id: 'user',
+    name: '用户',
+    permission_actions: [],
+    max_storage: 0,
+  },
+];
 
-  return cloudreveSuccess(groups);
+export async function onRequestGet(context) {
+  return cloudreveSuccess(GROUPS);
+}
+
+export async function onRequestPost(context) {
+  return cloudreveSuccess(GROUPS);
 }
