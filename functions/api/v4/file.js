@@ -202,7 +202,9 @@ export async function onRequestDelete(context) {
     try {
       if (skipSoftDelete) {
         const row = await env.DB.prepare(
-          'SELECT id, storage_type, storage_file_id, extra_json FROM files WHERE file_name = ? AND folder_path = ?'
+          folderPath === '/'
+            ? 'SELECT id, storage_type, storage_file_id, extra_json FROM files WHERE file_name = ? AND (folder_path = ? OR folder_path = \'\')'
+            : 'SELECT id, storage_type, storage_file_id, extra_json FROM files WHERE file_name = ? AND folder_path = ?'
         ).bind(fileName, folderPath).first();
 
         if (!row) continue;
@@ -212,7 +214,9 @@ export async function onRequestDelete(context) {
         deletedCount++;
       } else {
         const result = await env.DB.prepare(
-          'UPDATE files SET deleted_at = ? WHERE file_name = ? AND folder_path = ? AND deleted_at IS NULL'
+          folderPath === '/'
+            ? 'UPDATE files SET deleted_at = ? WHERE file_name = ? AND (folder_path = ? OR folder_path = \'\') AND deleted_at IS NULL'
+            : 'UPDATE files SET deleted_at = ? WHERE file_name = ? AND folder_path = ? AND deleted_at IS NULL'
         ).bind(now, fileName, folderPath).run();
         if (result.meta.changes > 0) deletedCount++;
       }
