@@ -183,7 +183,7 @@ export async function onRequestPost(context) {
     }
 
     if (useTelegram) {
-      const directLink = buildTelegramDirectLink(env, tgFileId);
+      const directLink = buildTelegramDirectLink(env, fileId);
       await sendTelegramUploadNotice(
         {
           chatId: env.TG_Chat_ID,

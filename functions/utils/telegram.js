@@ -237,8 +237,8 @@ export function buildTelegramDirectLink(env, directId, fallbackOrigin = "") {
   const publicBase = normalizeBaseUrl(env?.PUBLIC_BASE_URL);
   const fallbackBase = normalizeBaseUrl(fallbackOrigin);
   const base = publicBase || fallbackBase;
-  if (!base) return `/file/${directId}`;
-  return `${base}/file/${directId}`;
+  if (!base) return `/api/v4/file/get/${directId}`;
+  return `${base}/api/v4/file/get/${directId}`;
 }
 
 export function buildTelegramUploadNoticeText({
