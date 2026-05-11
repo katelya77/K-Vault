@@ -1,3 +1,5 @@
+import { generateDownloadToken } from '../../../utils/auth.js';
+
 function cloudreveSuccess(data) {
   return new Response(JSON.stringify({ code: 0, data }), {
     status: 200,
@@ -17,6 +19,10 @@ export async function onRequestPut(context) {
 
   if (!env.DB) {
     return errorResponse('D1 (DB) 未绑定', 500);
+  }
+
+  if (!env.JWT_SECRET) {
+    return errorResponse('JWT_SECRET 未配置，无法签发下载签名', 500);
   }
 
   try {
@@ -50,12 +56,13 @@ export async function onRequestPut(context) {
       let row = null;
       if (fileName) {
         row = await env.DB.prepare(
-          "SELECT id, file_name, mime_type, storage_key FROM files WHERE folder_path = ? AND file_name = ? LIMIT 1"
+          "SELECT id, file_name, file_size, mime_type, storage_key FROM files WHERE folder_path = ? AND file_name = ? LIMIT 1"
         ).bind(folderPath, fileName).first();
       }
 
       if (row) {
-        const fileUrl = baseUrl + '/api/v4/file/get/' + row.id;
+        const dlToken = await generateDownloadToken(row.id, row.file_size || 0, env.JWT_SECRET);
+        const fileUrl = baseUrl + '/api/v4/file/get/' + row.id + `?dl_token=${dlToken.token}&expires=${dlToken.expires}`;
         results.push({
           id: row.id,
           file_url: fileUrl,

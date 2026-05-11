@@ -34,6 +34,10 @@ export async function onRequestPost(context) {
     return errorResponse('D1 (DB) 未绑定', 500);
   }
 
+  if (!env.JWT_SECRET) {
+    return errorResponse('JWT_SECRET 未配置，无法签发下载签名', 500);
+  }
+
   try {
     const body = await request.json();
     const uris = body.uris || [];
@@ -57,13 +61,9 @@ export async function onRequestPost(context) {
       }
 
       if (row) {
-        let fileUrl = baseUrl + '/api/v4/file/get/' + row.id;
-        if (env.JWT_SECRET) {
-          const dlToken = await generateDownloadToken(row.id, row.file_size || 0, env.JWT_SECRET);
-          fileUrl += `?dl_token=${dlToken.token}&expires=${dlToken.expires}`;
-        }
+        const dlToken = await generateDownloadToken(row.id, row.file_size || 0, env.JWT_SECRET);
         results.push({
-          url: fileUrl,
+          url: baseUrl + '/api/v4/file/get/' + row.id + `?dl_token=${dlToken.token}&expires=${dlToken.expires}`,
           name: row.file_name,
         });
       } else {

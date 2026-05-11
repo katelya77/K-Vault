@@ -1,4 +1,4 @@
-import { verifyDownloadToken, verifySession, getSessionFromCookie, getBearerToken } from '../../../../utils/auth.js';
+import { verifyDownloadToken } from '../../../../utils/auth.js';
 import { buildTelegramBotApiUrl, buildTelegramFileUrl } from '../../../../utils/telegram.js';
 
 function errorResponse(msg, status = 404) {
@@ -37,30 +37,27 @@ export async function onRequestGet(context) {
     return errorResponse('D1 (DB) 未绑定', 500);
   }
 
-  if (env.BASIC_USER && env.BASIC_PASS) {
-    const url = new URL(context.request.url);
-    const dlToken = url.searchParams.get('dl_token');
-    const expires = url.searchParams.get('expires');
+  if (!env.JWT_SECRET) {
+    return errorResponse('JWT_SECRET 未配置，无法签发下载签名', 500);
+  }
 
-    let authorized = false;
+  const url = new URL(context.request.url);
+  const dlToken = url.searchParams.get('dl_token');
+  const expires = url.searchParams.get('expires');
 
-    if (dlToken && expires && env.JWT_SECRET) {
-      authorized = await verifyDownloadToken(fileId, dlToken, expires, env.JWT_SECRET);
-    }
+  if (!dlToken || !expires) {
+    return new Response(JSON.stringify({ code: 401, msg: '缺少下载签名', error: 'Missing download token' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
+  }
 
-    if (!authorized) {
-      const sessionToken = getSessionFromCookie(context.request) || getBearerToken(context.request);
-      if (sessionToken) {
-        authorized = await verifySession(sessionToken, env);
-      }
-    }
-
-    if (!authorized) {
-      return new Response(JSON.stringify({ code: 401, msg: '请先登录', error: 'Login required' }), {
-        status: 401,
-        headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
-      });
-    }
+  const authorized = await verifyDownloadToken(fileId, dlToken, expires, env.JWT_SECRET);
+  if (!authorized) {
+    return new Response(JSON.stringify({ code: 401, msg: '下载签名无效或已过期', error: 'Invalid or expired download token' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
+    });
   }
 
   try {
@@ -77,12 +74,9 @@ export async function onRequestGet(context) {
 
     let fileData = null;
 
-    // 1. 优先从 D1 data 列读取（迁移后的 Telegram 数据或新上传的 D1 存储）
     if (row.data) {
       fileData = row.data;
-    }
-    // 2. 回退到 KV 读取（老数据）
-    else if (row.storage_type === 'kv' && row.storage_key && env.img_url) {
+    } else if (row.storage_type === 'kv' && row.storage_key && env.img_url) {
       fileData = await env.img_url.get(row.storage_key, { type: 'arrayBuffer' });
     }
 
@@ -119,7 +113,6 @@ export async function onRequestGet(context) {
       });
     }
 
-    // 3. Telegram 存储 — 从 Bot API 获取文件，代理返回（确保 Content-Disposition 用原名）
     if (row.storage_type === 'telegram' && row.storage_key && env.TG_Bot_Token) {
       const tgApiUrl = buildTelegramBotApiUrl(env, 'getFile') + '?file_id=' + encodeURIComponent(row.storage_key);
       const tgResp = await fetch(tgApiUrl);
