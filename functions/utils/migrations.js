@@ -47,6 +47,20 @@ const MIGRATIONS = [
     migrate: async (db) => {
       await db.prepare('ALTER TABLE files ADD COLUMN data BLOB').run();
     }
+  },
+  {
+    version: 4,
+    name: 'add_deleted_at',
+    description: '添加 deleted_at 列，支持软删除/回收站功能',
+    check: async (db) => {
+      const result = await db.prepare(
+        "SELECT COUNT(*) as count FROM pragma_table_info('files') WHERE name='deleted_at'"
+      ).first();
+      return result?.count > 0;
+    },
+    migrate: async (db) => {
+      await db.prepare('ALTER TABLE files ADD COLUMN deleted_at INTEGER').run();
+    }
   }
 ];
 
@@ -98,7 +112,7 @@ export async function runAutoMigrations(db, env = null) {
 export async function ensureTablesExist(db) {
   await db.prepare("CREATE TABLE IF NOT EXISTS storage_configs (id TEXT PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL, encrypted_payload TEXT NOT NULL, is_default INTEGER NOT NULL DEFAULT 0, enabled INTEGER NOT NULL DEFAULT 1, metadata_json TEXT NOT NULL DEFAULT '{}', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)").run();
   await db.prepare("CREATE TABLE IF NOT EXISTS folders (id TEXT PRIMARY KEY, name TEXT NOT NULL, parent_id TEXT, path TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, FOREIGN KEY (parent_id) REFERENCES folders(id) ON DELETE CASCADE)").run();
-  await db.prepare("CREATE TABLE IF NOT EXISTS files (id TEXT PRIMARY KEY, storage_config_id TEXT NOT NULL DEFAULT 'default', storage_type TEXT NOT NULL, storage_key TEXT NOT NULL, storage_file_id TEXT, file_name TEXT NOT NULL, physical_file_name TEXT, file_size INTEGER NOT NULL DEFAULT 0, mime_type TEXT, folder_id TEXT, folder_path TEXT NOT NULL DEFAULT '', list_type TEXT NOT NULL DEFAULT 'None', label TEXT NOT NULL DEFAULT 'None', liked INTEGER NOT NULL DEFAULT 0, extra_json TEXT NOT NULL DEFAULT '{}', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)").run();
+  await db.prepare("CREATE TABLE IF NOT EXISTS files (id TEXT PRIMARY KEY, storage_config_id TEXT NOT NULL DEFAULT 'default', storage_type TEXT NOT NULL, storage_key TEXT NOT NULL, storage_file_id TEXT, file_name TEXT NOT NULL, physical_file_name TEXT, file_size INTEGER NOT NULL DEFAULT 0, mime_type TEXT, folder_id TEXT, folder_path TEXT NOT NULL DEFAULT '', list_type TEXT NOT NULL DEFAULT 'None', label TEXT NOT NULL DEFAULT 'None', liked INTEGER NOT NULL DEFAULT 0, extra_json TEXT NOT NULL DEFAULT '{}', deleted_at INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)").run();
   await db.prepare("CREATE TABLE IF NOT EXISTS shares (id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE, file_id TEXT NOT NULL, password_hash TEXT, expires_at INTEGER, max_downloads INTEGER DEFAULT 0, download_count INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL)").run();
   await db.prepare("CREATE TABLE IF NOT EXISTS api_tokens (id TEXT PRIMARY KEY, name TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL, last_used_at INTEGER, enabled INTEGER NOT NULL DEFAULT 1)").run();
   await db.prepare("CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value_json TEXT NOT NULL, updated_at INTEGER NOT NULL)").run();

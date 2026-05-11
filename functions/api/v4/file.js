@@ -52,65 +52,89 @@ export async function onRequestGet(context) {
 
   try {
     const parsed = parseCloudreveUri(uri);
+    const isTrash = parsed.fs === 'trash';
     const folderPath = parsed.path;
 
+    if (isTrash) {
+      const colCheck = await env.DB.prepare(
+        "SELECT COUNT(*) as count FROM pragma_table_info('files') WHERE name='deleted_at'"
+      ).first();
+      if (!colCheck || !colCheck.count) {
+        return errorResponse('回收站功能不可用，请先执行数据库迁移', 400);
+      }
+    }
+
     const countResult = await env.DB.prepare(
-      'SELECT COUNT(*) as count FROM files WHERE folder_path = ?'
-    ).bind(folderPath).first();
+      isTrash
+        ? 'SELECT COUNT(*) as count FROM files WHERE deleted_at IS NOT NULL'
+        : 'SELECT COUNT(*) as count FROM files WHERE folder_path = ? AND deleted_at IS NULL'
+    ).bind(...(isTrash ? [] : [folderPath])).first();
     const total = countResult?.count || 0;
 
     const offset = (page - 1) * pageSize;
     const fileRows = await env.DB.prepare(
-      'SELECT id, file_name, folder_path, file_size, created_at, updated_at FROM files WHERE folder_path = ? ORDER BY created_at DESC LIMIT ? OFFSET ?'
-    ).bind(folderPath, pageSize, offset).all();
+      isTrash
+        ? 'SELECT id, file_name, folder_path, file_size, created_at, updated_at, deleted_at, storage_type, storage_file_id FROM files WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT ? OFFSET ?'
+        : 'SELECT id, file_name, folder_path, file_size, created_at, updated_at FROM files WHERE folder_path = ? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT ? OFFSET ?'
+    ).bind(...(isTrash ? [pageSize, offset] : [folderPath, pageSize, offset])).all();
 
     const files = (fileRows.results || []).map(row => ({
       id: row.id,
       name: row.file_name,
       type: 0,
-      path: 'cloudreve://my' + (row.folder_path ? '/' + row.folder_path.replace(/^\//, '') + '/' : '/') + row.file_name,
+      path: isTrash
+        ? row.folder_path
+          ? 'cloudreve://my' + '/' + row.folder_path.replace(/^\//, '') + '/' + row.file_name
+          : 'cloudreve://my/' + row.file_name
+        : 'cloudreve://my' + (row.folder_path ? '/' + row.folder_path.replace(/^\//, '') + '/' : '/') + row.file_name,
       size: row.file_size,
       created_at: fmtTime(row.created_at),
-      updated_at: fmtTime(row.updated_at),
+      updated_at: fmtTime(row.deleted_at || row.updated_at),
       owned: true,
       capability: 'wUKA',
+      ...(isTrash ? { metadata: { restore_uri: row.folder_path || '/' } } : {}),
     }));
 
-    const parentRow = await env.DB.prepare(
-      "SELECT id, name, path, created_at, updated_at FROM folders WHERE path = ? LIMIT 1"
-    ).bind(folderPath || '/').first();
+    let folders = [];
+    let parentRow = null;
 
-    const folderRows = await env.DB.prepare(
-      "SELECT id, name, path, created_at, updated_at FROM folders WHERE parent_id = ? ORDER BY name ASC"
-    ).bind(parentRow?.id || '').all();
+    if (!isTrash) {
+      parentRow = await env.DB.prepare(
+        "SELECT id, name, path, created_at, updated_at FROM folders WHERE path = ? LIMIT 1"
+      ).bind(folderPath || '/').first();
 
-    const folders = (folderRows.results || []).map(row => ({
-      id: row.id,
-      name: row.name,
-      type: 1,
-      path: 'cloudreve://my' + (row.path === '/' ? '' : row.path),
-      size: 0,
-      created_at: fmtTime(row.created_at),
-      updated_at: fmtTime(row.updated_at),
-      owned: true,
-      capability: 'wUKA',
-    }));
+      const folderRows = await env.DB.prepare(
+        "SELECT id, name, path, created_at, updated_at FROM folders WHERE parent_id = ? ORDER BY name ASC"
+      ).bind(parentRow?.id || '').all();
+
+      folders = (folderRows.results || []).map(row => ({
+        id: row.id,
+        name: row.name,
+        type: 1,
+        path: 'cloudreve://my' + (row.path === '/' ? '' : row.path),
+        size: 0,
+        created_at: fmtTime(row.created_at),
+        updated_at: fmtTime(row.updated_at),
+        owned: true,
+        capability: 'wUKA',
+      }));
+    }
 
     return cloudreveSuccess({
       files: [...folders, ...files],
       pagination: {
         page,
         page_size: pageSize,
-        total: total + (folderRows.results?.length || 0),
+        total: total + (folders?.length || 0),
       },
       props: {
-        root_uri: 'cloudreve://my',
-        root_name: '我的文件',
+        root_uri: isTrash ? 'cloudreve://trash' : 'cloudreve://my',
+        root_name: isTrash ? '回收站' : '我的文件',
         max_page_size: 100,
-        order_by_options: ['created_at', 'updated_at', 'name', 'size'],
-        order_direction_options: ['asc', 'desc'],
+        order_by_options: isTrash ? ['deleted_at'] : ['created_at', 'updated_at', 'name', 'size'],
+        order_direction_options: ['desc'],
       },
-      parent: {
+      parent: isTrash ? null : {
         id: parentRow?.id || 'root',
         name: displayName(uri),
         type: 1,
