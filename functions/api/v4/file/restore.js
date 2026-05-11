@@ -57,12 +57,32 @@ export async function onRequestPost(context) {
     const folderPath = pathParts.length === 0 ? '/' : '/' + pathParts.join('/');
 
     try {
+      const row = await env.DB.prepare(
+        folderPath === '/'
+          ? "SELECT id, user_id, file_size FROM files WHERE file_name = ? AND (folder_path = ? OR folder_path = '') AND deleted_at IS NOT NULL"
+          : 'SELECT id, user_id, file_size FROM files WHERE file_name = ? AND folder_path = ? AND deleted_at IS NOT NULL'
+      ).bind(fileName, folderPath).first();
+
+      if (!row) continue;
+
       const result = await env.DB.prepare(
         folderPath === '/'
           ? "UPDATE files SET deleted_at = NULL WHERE file_name = ? AND (folder_path = ? OR folder_path = '') AND deleted_at IS NOT NULL"
           : 'UPDATE files SET deleted_at = NULL WHERE file_name = ? AND folder_path = ? AND deleted_at IS NOT NULL'
       ).bind(fileName, folderPath).run();
-      if (result.meta.changes > 0) restoredCount++;
+      
+      if (result.meta.changes > 0) {
+        restoredCount++;
+        if (row.user_id && row.file_size > 0) {
+          try {
+            await env.DB.prepare(
+              "UPDATE users SET storage_used = storage_used + ? WHERE id = ?"
+            ).bind(row.file_size, row.user_id).run();
+          } catch (e) {
+            console.error('恢复文件加回 storage_used 失败:', e.message);
+          }
+        }
+      }
     } catch (e) {
       console.error('恢复文件失败:', uri, e.message);
     }

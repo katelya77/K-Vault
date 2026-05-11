@@ -171,6 +171,40 @@ const MIGRATIONS = [
       }
       await db.prepare("UPDATE users SET \"group\" = 'admin', status = 'active' WHERE id = '1'").run();
     }
+  },
+  {
+    version: 10,
+    name: 'add_user_id_to_files',
+    description: 'files 表新增 user_id 列，支持多用户存储配额管理',
+    check: async (db) => {
+      const result = await db.prepare(
+        "SELECT COUNT(*) as count FROM pragma_table_info('files') WHERE name='user_id'"
+      ).first();
+      return result?.count > 0;
+    },
+    migrate: async (db) => {
+      await db.prepare("ALTER TABLE files ADD COLUMN user_id TEXT NOT NULL DEFAULT ''").run();
+    }
+  },
+  {
+    version: 11,
+    name: 'init_storage_used',
+    description: '初始化用户的 storage_used，计算现有文件的总大小',
+    check: async (db) => {
+      const row = await db.prepare(
+        "SELECT storage_used FROM users WHERE id = '1' AND storage_used > 0"
+      ).first();
+      return !!row;
+    },
+    migrate: async (db) => {
+      const result = await db.prepare(
+        "SELECT COALESCE(SUM(file_size), 0) as total_size FROM files WHERE deleted_at IS NULL"
+      ).first();
+      const totalSize = result?.total_size || 0;
+      await db.prepare(
+        "UPDATE users SET storage_used = ? WHERE id = '1'"
+      ).bind(totalSize).run();
+    }
   }
 ];
 

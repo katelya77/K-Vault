@@ -203,22 +203,53 @@ export async function onRequestDelete(context) {
       if (skipSoftDelete) {
         const row = await env.DB.prepare(
           folderPath === '/'
-            ? 'SELECT id, storage_type, storage_file_id, extra_json FROM files WHERE file_name = ? AND (folder_path = ? OR folder_path = \'\')'
-            : 'SELECT id, storage_type, storage_file_id, extra_json FROM files WHERE file_name = ? AND folder_path = ?'
+            ? 'SELECT id, user_id, file_size, storage_type, storage_file_id, extra_json, deleted_at FROM files WHERE file_name = ? AND (folder_path = ? OR folder_path = \'\')'
+            : 'SELECT id, user_id, file_size, storage_type, storage_file_id, extra_json, deleted_at FROM files WHERE file_name = ? AND folder_path = ?'
         ).bind(fileName, folderPath).first();
 
         if (!row) continue;
 
+        const wasSoftDeleted = row.deleted_at !== null;
         await deleteFromTargetStorage(env, row);
         await env.DB.prepare('DELETE FROM files WHERE id = ?').bind(row.id).run();
         deletedCount++;
+        
+        if (!wasSoftDeleted && row.user_id && row.file_size > 0) {
+          try {
+            await env.DB.prepare(
+              "UPDATE users SET storage_used = MAX(0, storage_used - ?) WHERE id = ?"
+            ).bind(row.file_size, row.user_id).run();
+          } catch (e) {
+            console.error('硬删除扣除 storage_used 失败:', e.message);
+          }
+        }
       } else {
+        const row = await env.DB.prepare(
+          folderPath === '/'
+            ? 'SELECT id, user_id, file_size FROM files WHERE file_name = ? AND (folder_path = ? OR folder_path = \'\') AND deleted_at IS NULL'
+            : 'SELECT id, user_id, file_size FROM files WHERE file_name = ? AND folder_path = ? AND deleted_at IS NULL'
+        ).bind(fileName, folderPath).first();
+
+        if (!row) continue;
+
         const result = await env.DB.prepare(
           folderPath === '/'
-            ? 'UPDATE files SET deleted_at = ? WHERE file_name = ? AND (folder_path = ? OR folder_path = \'\') AND deleted_at IS NULL'
-            : 'UPDATE files SET deleted_at = ? WHERE file_name = ? AND folder_path = ? AND deleted_at IS NULL'
-        ).bind(now, fileName, folderPath).run();
-        if (result.meta.changes > 0) deletedCount++;
+            ? 'UPDATE files SET deleted_at = ? WHERE id = ?'
+            : 'UPDATE files SET deleted_at = ? WHERE id = ?'
+        ).bind(now, row.id).run();
+
+        if (result.meta.changes > 0) {
+          deletedCount++;
+          if (row.user_id && row.file_size > 0) {
+            try {
+              await env.DB.prepare(
+                "UPDATE users SET storage_used = MAX(0, storage_used - ?) WHERE id = ?"
+              ).bind(row.file_size, row.user_id).run();
+            } catch (e) {
+              console.error('扣除 storage_used 失败:', e.message);
+            }
+          }
+        }
       }
     } catch (e) {
       console.error('删除文件失败:', uri, e.message);

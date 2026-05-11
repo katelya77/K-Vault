@@ -45,8 +45,9 @@ function getListType(ext) {
 }
 
 export async function onRequestPost(context) {
-  const { env, request, params } = context;
+  const { env, request, params, data } = context;
   const sessionID = params.sessionID;
+  const userId = data?.userId || '';
 
   if (!sessionID) {
     return errorResponse('缺少 sessionID', 400);
@@ -147,7 +148,7 @@ export async function onRequestPost(context) {
       try {
         if (useTelegram) {
           await env.DB.prepare(
-            "INSERT OR IGNORE INTO files (id, storage_config_id, storage_type, storage_key, storage_file_id, file_name, physical_file_name, file_size, mime_type, folder_id, folder_path, list_type, label, liked, extra_json, created_at, updated_at) VALUES (?, 'default', 'telegram', ?, ?, ?, ?, ?, ?, '', ?, ?, ?, 0, ?, ?, ?)"
+            "INSERT OR IGNORE INTO files (id, storage_config_id, storage_type, storage_key, storage_file_id, file_name, physical_file_name, file_size, mime_type, folder_id, folder_path, list_type, label, liked, extra_json, user_id, created_at, updated_at) VALUES (?, 'default', 'telegram', ?, ?, ?, ?, ?, ?, '', ?, ?, ?, 0, ?, ?, ?, ?)"
           ).bind(
             fileId,
             storageKey,
@@ -160,12 +161,13 @@ export async function onRequestPost(context) {
             listType,
             'None',
             JSON.stringify({ telegramMessageId: tgMessageId }),
+            userId,
             now,
             now,
           ).run();
         } else {
           await env.DB.prepare(
-            "INSERT OR IGNORE INTO files (id, storage_config_id, storage_type, storage_key, storage_file_id, file_name, physical_file_name, file_size, mime_type, folder_id, folder_path, list_type, label, liked, extra_json, created_at, updated_at, data) VALUES (?, 'default', 'd1', '', '', ?, ?, ?, ?, '', ?, ?, ?, 0, '{}', ?, ?, ?)"
+            "INSERT OR IGNORE INTO files (id, storage_config_id, storage_type, storage_key, storage_file_id, file_name, physical_file_name, file_size, mime_type, folder_id, folder_path, list_type, label, liked, extra_json, user_id, created_at, updated_at, data) VALUES (?, 'default', 'd1', '', '', ?, ?, ?, ?, '', ?, ?, ?, 0, '{}', ?, ?, ?, ?)"
           ).bind(
             fileId,
             session.file_name,
@@ -175,6 +177,7 @@ export async function onRequestPost(context) {
             folderPath,
             listType,
             'None',
+            userId,
             now,
             now,
             fileData,
@@ -219,14 +222,13 @@ export async function onRequestPost(context) {
 
     await env.img_url.delete('tmp:sess:' + sessionID);
 
-    if (env.img_url && fileData.byteLength > 0) {
+    if (userId && fileData.byteLength > 0) {
       try {
-        const cached = await env.img_url.get('capacity:used');
-        if (cached !== null) {
-          await env.img_url.put('capacity:used', String(parseInt(cached, 10) + fileData.byteLength));
-        }
+        await env.DB.prepare(
+          "UPDATE users SET storage_used = storage_used + ? WHERE id = ?"
+        ).bind(fileData.byteLength, userId).run();
       } catch (e) {
-        // ignore
+        console.error('更新 storage_used 失败:', e.message);
       }
     }
 
