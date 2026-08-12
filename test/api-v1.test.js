@@ -3,9 +3,13 @@ const assert = require('assert');
 class MemoryKV {
   constructor() {
     this.store = new Map();
+    this.getCalls = 0;
+    this.putCalls = 0;
+    this.getWithMetadataCalls = 0;
   }
 
   async put(key, value = '', options = {}) {
+    this.putCalls += 1;
     this.store.set(String(key), {
       value: String(value ?? ''),
       metadata: options?.metadata || null,
@@ -13,6 +17,7 @@ class MemoryKV {
   }
 
   async get(key, options = {}) {
+    this.getCalls += 1;
     const entry = this.store.get(String(key));
     if (!entry) return null;
     if (options?.type === 'json') {
@@ -50,6 +55,7 @@ class MemoryKV {
   }
 
   async getWithMetadata(key) {
+    this.getWithMetadataCalls += 1;
     const entry = this.store.get(String(key));
     if (!entry) return null;
     return {
@@ -234,6 +240,118 @@ describe('API v1 middleware auth', function () {
 
     const tokenRecord = await env.img_url.get(`api_token:${tokenInfo.id}`, { type: 'json' });
     assert.ok(Number(tokenRecord?.lastUsedAt || 0) > 0);
+  });
+
+  it('uploads signed Telegram files without metadata KV access when metadata is disabled', async function () {
+    const { onRequestPost: upload } = await import('../functions/api/v1/upload.js');
+    const env = {
+      img_url: new MemoryKV(),
+      R2_BUCKET: new MemoryR2(),
+    };
+    Object.assign(env, {
+      TG_Bot_Token: 'test-bot-token',
+      TG_Chat_ID: '-1001234567890',
+      FILE_URL_SECRET: 'test-file-url-secret',
+      MINIMIZE_KV_WRITES: 'true',
+      TELEGRAM_METADATA_MODE: 'off',
+      TG_UPLOAD_NOTIFY: 'false',
+      disable_telemetry: 'true',
+    });
+
+    const formData = new FormData();
+    formData.append('file', new Blob(['image-bytes'], { type: 'image/png' }), 'image.png');
+    const request = new Request('https://example.com/api/v1/upload', {
+      method: 'POST',
+      body: formData,
+    });
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (url) => {
+      assert.match(String(url), /\/sendDocument$/);
+      return new Response(JSON.stringify({
+        ok: true,
+        result: {
+          message_id: 42,
+          document: { file_id: 'telegram-image-file-id' },
+        },
+      }), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    };
+
+    try {
+      const readsBeforeRequest = env.img_url.getCalls;
+      const writesBeforeRequest = env.img_url.putCalls;
+      const routeContext = {
+        request,
+        env,
+        data: { apiToken: { id: 'test-token' } },
+        next: () => new Response('next', { status: 200 }),
+      };
+
+      const response = await upload(routeContext);
+
+      const payload = await parseJson(response);
+      assert.strictEqual(response.status, 200);
+      assert.match(payload.links.download, /\/file\/tgs_/);
+      assert.strictEqual(payload.links.delete, null);
+      assert.strictEqual(env.img_url.getCalls, readsBeforeRequest);
+      assert.strictEqual(env.img_url.putCalls, writesBeforeRequest);
+      assert.strictEqual(env.img_url.getWithMetadataCalls, 0);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('ignores Telegram sharing options when metadata is disabled', async function () {
+    const { onRequestPost: upload } = await import('../functions/api/v1/upload.js');
+    const env = {
+      img_url: new MemoryKV(),
+      TG_Bot_Token: 'test-bot-token',
+      TG_Chat_ID: '-1001234567890',
+      FILE_URL_SECRET: 'test-file-url-secret',
+      MINIMIZE_KV_WRITES: 'true',
+      TELEGRAM_METADATA_MODE: 'off',
+      TG_UPLOAD_NOTIFY: 'false',
+      disable_telemetry: 'true',
+    };
+    const formData = new FormData();
+    formData.append('file', new Blob(['image-bytes'], { type: 'image/png' }), 'image.png');
+    formData.append('password', 'secret');
+    formData.append('expires_in', '86400');
+    formData.append('max_downloads', '3');
+    formData.append('slug', 'ignored-share-link');
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      ok: true,
+      result: {
+        message_id: 42,
+        document: { file_id: 'telegram-image-file-id' },
+      },
+    }), {
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    try {
+      const response = await upload({
+        request: new Request('https://example.com/api/v1/upload', {
+          method: 'POST',
+          body: formData,
+        }),
+        env,
+        data: { apiToken: { id: 'test-token' } },
+        next: () => new Response('next', { status: 200 }),
+      });
+
+      const payload = await parseJson(response);
+      assert.strictEqual(response.status, 200);
+      assert.strictEqual(payload.links.delete, null);
+      assert.strictEqual(env.img_url.getWithMetadataCalls, 0);
+      assert.strictEqual(env.img_url.putCalls, 0);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });
 
