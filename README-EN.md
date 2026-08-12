@@ -298,7 +298,7 @@ If you are concerned about Cloudflare KV daily quota usage, you can enable:
 - `TELEGRAM_LINK_MODE=signed` (signed direct links for Telegram files only)
 - Or `MINIMIZE_KV_WRITES=true` (also affects chunked upload task write strategy)
 
-After enabling this, Telegram files still write a lightweight KV index by default (for admin list and management operations). Downloads resolve `file_id` through signed parameters, reducing KV read/write pressure. With `TELEGRAM_METADATA_MODE=off`, signed Telegram uploads skip the post-upload KV metadata lookup. In this mode, `password`, `expires_in`, `max_downloads`, and `slug` are ignored, and the response has no delete link.
+After enabling this, Telegram files still write a lightweight KV index by default (for admin list and management operations). Downloads resolve `file_id` through signed parameters, reducing KV read/write pressure. With `TELEGRAM_METADATA_MODE=off`, signed Telegram uploads skip the post-upload KV metadata lookup. In this mode, `password`, `expires_in`, `max_downloads`, and `slug` are ignored, and the response has no delete link. With `MINIMIZE_KV_WRITES=true`, API Token validation still reads KV, but writes `lastUsedAt` only on first use and then at least one hour apart.
 
 > **Optional tradeoff:** If you want Telegram files to skip KV writes entirely, also set `TELEGRAM_METADATA_MODE=off`. In this mode, files will not appear in the admin list, and tag/allowlist/denylist/delete flows that rely on KV metadata will be unavailable.
 
@@ -617,4 +617,3 @@ MIT License
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=katelya77/K-Vault&type=Date)](https://star-history.com/#katelya77/K-Vault&Date)
-

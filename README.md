@@ -333,7 +333,7 @@ curl "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getWebhookInfo"
 - `TELEGRAM_LINK_MODE=signed`（仅 Telegram 文件使用签名直链）
 - 或 `MINIMIZE_KV_WRITES=true`（同时影响分片上传任务写入策略）
 
-启用后，Telegram 文件默认仍会写入轻量 KV 索引（用于后台列表和管理操作），下载时通过签名参数直接解析 `file_id`，从而降低 KV 读写压力。设置 `TELEGRAM_METADATA_MODE=off` 时，签名 Telegram 上传会跳过 API 上传后的 KV 元数据探测。该模式会忽略 `password`、`expires_in`、`max_downloads` 和 `slug`，且响应不会提供删除链接。
+启用后，Telegram 文件默认仍会写入轻量 KV 索引（用于后台列表和管理操作），下载时通过签名参数直接解析 `file_id`，从而降低 KV 读写压力。设置 `TELEGRAM_METADATA_MODE=off` 时，签名 Telegram 上传会跳过 API 上传后的 KV 元数据探测。该模式会忽略 `password`、`expires_in`、`max_downloads` 和 `slug`，且响应不会提供删除链接。设置 `MINIMIZE_KV_WRITES=true` 时，API Token 鉴权仍需读取 KV，但 `lastUsedAt` 仅在首次使用及之后至少间隔一小时才写回。
 
 > **可选取舍：** 若你希望 Telegram 文件完全不写入 KV，请额外设置 `TELEGRAM_METADATA_MODE=off`。此时文件不会出现在后台列表，也无法使用依赖 KV 元数据的标签/黑白名单/删除流程。
 

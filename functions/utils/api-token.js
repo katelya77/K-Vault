@@ -271,10 +271,18 @@ export async function deleteApiToken(tokenId, env) {
   return true;
 }
 
-export async function touchApiTokenLastUsed(tokenId, env) {
+export async function touchApiTokenLastUsed(tokenId, env, { minIntervalMs = 0 } = {}) {
   const record = await getRecordById(tokenId, env);
   if (!record) return false;
-  record.lastUsedAt = Date.now();
+
+  const now = Date.now();
+  const interval = Math.max(0, Number(minIntervalMs) || 0);
+  const lastUsedAt = Number(record.lastUsedAt || 0);
+  if (interval > 0 && lastUsedAt > 0 && now - lastUsedAt < interval) {
+    return false;
+  }
+
+  record.lastUsedAt = now;
   await putRecord(record, env);
   return true;
 }
