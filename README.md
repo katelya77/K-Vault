@@ -839,4 +839,4 @@ MIT License
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=katelya77/K-Vault&type=Date)](https://star-history.com/#katelya77/K-Vault&Date)
+[![Star History Chart](https://star-history.dera.page/svg?repos=katelya77/K-Vault&type=Date)](https://star-history.dera.page/#katelya77/K-Vault&Date)
