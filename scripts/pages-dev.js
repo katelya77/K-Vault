@@ -38,14 +38,14 @@ function ensureDevCredentials(file = varsPath) {
 
 function start() {
   ensureDevCredentials();
-  const command = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+  const wrangler = require.resolve('wrangler/bin/wrangler.js');
   const args = [
-    '--no-install', 'wrangler', 'pages', 'dev', './',
+    wrangler, 'pages', 'dev', './',
     '--kv', 'img_url', '--r2=R2_BUCKET',
     '--compatibility-date=2026-05-03',
     '--port', '8080', '--persist-to', './data',
   ];
-  const child = spawn(command, args, { cwd: root, stdio: 'inherit' });
+  const child = spawn(process.execPath, args, { cwd: root, stdio: 'inherit' });
   child.on('error', (error) => {
     console.error('[dev] Could not start Wrangler:', error.message);
     process.exitCode = 1;
