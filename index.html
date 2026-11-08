@@ -941,6 +941,39 @@
         accent-color: var(--primary-color);
       }
 
+      .public-base-option {
+        margin-top: 16px;
+        padding: 14px 18px;
+        border: 1px solid var(--surface-border);
+        border-radius: 14px;
+        background: var(--surface-1);
+        color: var(--text-primary);
+      }
+
+      .public-base-option label {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .public-base-option input {
+        accent-color: var(--primary-color);
+      }
+
+      .public-base-option label.is-disabled {
+        cursor: not-allowed;
+        opacity: 0.65;
+      }
+
+      .public-base-option p {
+        margin: 6px 0 0 25px;
+        color: var(--text-muted);
+        font-size: 0.85em;
+        overflow-wrap: anywhere;
+      }
+
       .upload-item-compression {
         color: var(--primary-color);
         font-size: 0.75em;
@@ -1187,9 +1220,11 @@
       }
 
       .result-item-link {
+        display: block;
         font-size: 0.8em;
         color: var(--primary-color);
         margin-top: 4px;
+        text-decoration: none;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -2520,6 +2555,15 @@
             </div>
           </div>
 
+          <div class="public-base-option">
+            <label :class="{ 'is-disabled': !publicBaseUrl }">
+              <input type="checkbox" v-model="usePublicBaseUrl" :disabled="!publicBaseUrl" />
+              <span>使用 PUBLIC_BASE_URL 公共域名返回结果</span>
+            </label>
+            <p v-if="publicBaseUrl">上传成功后的链接使用 {{ publicBaseUrl }}；上传请求仍发送到当前站点。</p>
+            <p v-else>未配置有效的 PUBLIC_BASE_URL，链接将使用当前网页域名。</p>
+          </div>
+
           <!-- 上传方式按钮 -->
           <div class="folder-target-panel">
             <div class="folder-target-head">
@@ -2928,7 +2972,7 @@
             <div
               class="result-item"
               v-for="(file, index) in uploadedFiles"
-              :key="index"
+              :key="file.path + ':' + file.uploadTime"
               :class="{ selected: file.selected }"
             >
               <input
@@ -2937,20 +2981,22 @@
                 v-model="file.selected"
               />
               <img
-                :src="getCleanFileUrl(file)"
+                :src="getLocalFileUrl(file) || null"
                 class="result-item-preview"
-                @click="previewImage(getCleanFileUrl(file))"
+                @click="previewImage(getLocalFileUrl(file))"
                 onerror="this.style.display='none'"
               />
               <div class="result-item-info">
                 <div class="result-item-name">{{ getDisplayName(file) }}</div>
-                <div
+                <a
                   class="result-item-link"
-                  @click="copyLink(file)"
+                  :href="getCleanFileUrl(file) || null"
+                  target="_blank"
+                  rel="noopener noreferrer"
                   :title="formatLink(file)"
                 >
                   {{ formatLink(file) }}
-                </div>
+                </a>
               </div>
               <div class="result-item-actions">
                 <button
@@ -3081,7 +3127,7 @@
             <!-- 图片文件显示缩略图 -->
             <img
               v-if="isImageFile(getDisplayName(item))"
-              :src="getCleanFileUrl(item)"
+              :src="getLocalFileUrl(item) || null"
               @error="handleHistoryImgError($event, item)"
             />
             <!-- 非图片文件显示图标 -->
@@ -3376,6 +3422,8 @@
         el: "#app",
         data: {
           baseURL: document.location.origin,
+          publicBaseUrl: "",
+          usePublicBaseUrl: false,
           isDragging: false,
           showUrlInput: false,
           urlToUpload: "",
@@ -3975,6 +4023,8 @@
               return;
             }
 
+            const usedPublicBaseUrl = this.usePublicBaseUrl && Boolean(this.publicBaseUrl);
+            const linkBaseURL = this.getSelectedLinkBaseURL();
             this.urlUploading = true;
             try {
               // 调用后端代理API，由服务器端获取外部URL内容（无CORS限制）
@@ -4009,7 +4059,9 @@
                 const uploadedFile = {
                   name: fileName,
                   fileName: fileName,
-                  url: `${this.baseURL}${src}`,
+                  url: `${linkBaseURL}${src}`,
+                  linkBaseURL,
+                  usedPublicBaseUrl,
                   path: src,
                   size: 0, // URL上传无法预知大小
                   selected: false,
@@ -4032,11 +4084,20 @@
           },
 
           createUploadContext() {
+            const usedPublicBaseUrl = this.usePublicBaseUrl && Boolean(this.publicBaseUrl);
             return {
               storageMode: this.storageMode,
               storageTarget: this.storageTarget,
               folderPath: this.normalizeFolderPath(this.folderPath),
+              linkBaseURL: this.getSelectedLinkBaseURL(),
+              usedPublicBaseUrl,
             };
+          },
+
+          getSelectedLinkBaseURL() {
+            return this.usePublicBaseUrl && this.publicBaseUrl
+              ? this.publicBaseUrl
+              : this.baseURL;
           },
 
           getImageFormatConfig(format) {
@@ -4630,6 +4691,8 @@
                 storageMode: context.storageMode,
                 storageTarget: context.storageTarget,
                 folderPath: context.folderPath,
+                linkBaseURL: context.linkBaseURL,
+                usedPublicBaseUrl: context.usedPublicBaseUrl,
                 isChunked: false,
               };
 
@@ -4831,10 +4894,16 @@
 
           // 处理上传成功
           handleUploadSuccess(item, src) {
+            const usedPublicBaseUrl = item.usedPublicBaseUrl === true;
+            const linkBaseURL = usedPublicBaseUrl
+              ? item.linkBaseURL || this.baseURL
+              : this.baseURL;
             const uploadedFile = {
               name: item.file.name, // 原始文件名
               fileName: item.file.name, // 保存原始文件名用于显示
-              url: `${this.baseURL}${src}`,
+              url: `${linkBaseURL}${src}`,
+              linkBaseURL,
+              usedPublicBaseUrl,
               path: src,
               size: item.file.size,
               selected: false,
@@ -4969,9 +5038,10 @@
 
           // 下载文件
           downloadFile(file) {
+            const url = this.getLocalFileUrl(file);
+            if (!url) return;
             const link = document.createElement("a");
-            // 使用核心方法获取干净的文件直链
-            link.href = this.getCleanFileUrl(file);
+            link.href = url;
             // 使用安全的文件名获取方法
             link.download = this.getDisplayName(file);
             link.click();
@@ -4990,7 +5060,8 @@
             // 使用安全的文件名获取方法
             const fileName = this.getDisplayName(file);
             // 使用核心方法获取干净的文件直链
-            const fileUrl = this.getCleanFileUrl(file);
+            const fileUrl = this.getLocalFileUrl(file);
+            if (!fileUrl) return;
             const ext = fileName.split(".").pop().toLowerCase();
 
             // 图片类型 - 保持原生 Lightbox 预览
@@ -5146,45 +5217,58 @@
             return "未知文件";
           },
 
-          // 核心方法：从污染的 URL 中提取干净的文件直链
-          // 无论输入是 ID、路径、还是完整 URL，都返回标准格式：https://files.example.com/file/{id}.{ext}
-          getCleanFileUrl(item) {
-            let rawUrl = item.url || item.path || "";
+          // 从文件记录生成分享直链
+          getCleanFileUrl(item, linkBaseURL = this.getStoredLinkBaseURL(item.linkBaseURL, item.usedPublicBaseUrl)) {
+            const rawUrl = String(item.path || item.url || "");
 
-            // 情况1: 已经是标准直链格式 https://files.example.com/file/xxx.ext
-            if (rawUrl.startsWith("https://") && rawUrl.includes("/file/")) {
+            // 情况1: 已经是完整的 /file/ 直链
+            if (/^https?:\/\//i.test(rawUrl) && rawUrl.includes("/file/")) {
               // 提取 /file/ 后面的部分作为 fileId
               const match = rawUrl.match(/\/file\/([^?#]+)/);
               if (match) {
                 const fileId = match[1];
-                return `${this.baseURL}/file/${fileId}`;
+                return `${linkBaseURL}/file/${fileId}`;
               }
             }
 
             // 情况2: 相对路径格式 /file/xxx.ext
             if (rawUrl.startsWith("/file/")) {
-              return `${this.baseURL}${rawUrl}`;
+              return `${linkBaseURL}${rawUrl}`;
             }
 
             // 情况3: 只有 fileId（如 BQACAg...ext）
             if (rawUrl && !rawUrl.includes("/") && !rawUrl.includes("://")) {
-              return `${this.baseURL}/file/${rawUrl}`;
+              return `${linkBaseURL}/file/${rawUrl}`;
             }
 
             // 情况4: 污染的 URL（如 /file/https://... 或其他异常格式）
             // 尝试提取最后的文件ID部分
             const lastSegment = rawUrl.split("/").pop().split("?")[0];
             if (lastSegment && lastSegment.includes(".")) {
-              return `${this.baseURL}/file/${lastSegment}`;
+              return `${linkBaseURL}/file/${lastSegment}`;
             }
 
-            // 兜底：返回原始 URL
-            return rawUrl;
+            return "";
           },
 
-          // 从 URL 中提取干净的文件路径（不带域名，格式：/file/xxx.ext）
+          getStoredLinkBaseURL(selectedBaseURL, usedPublicBaseUrl) {
+            if (usedPublicBaseUrl === false || !selectedBaseURL) return this.baseURL;
+            try {
+              const parsed = new URL(selectedBaseURL);
+              if (["http:", "https:"].includes(parsed.protocol) && !parsed.username && !parsed.password) {
+                return `${parsed.origin}${parsed.pathname.replace(/\/+$/, "")}`;
+              }
+            } catch (e) {}
+            return this.baseURL;
+          },
+
+          getLocalFileUrl(item) {
+            return this.getCleanFileUrl(item, this.baseURL);
+          },
+
+          // 从 URL 中提取当前站点的文件路径
           getCleanFilePath(item) {
-            const fullUrl = this.getCleanFileUrl(item);
+            const fullUrl = this.getLocalFileUrl(item);
             try {
               const url = new URL(fullUrl);
               return url.pathname;
@@ -5335,10 +5419,20 @@
                 this.uploadHistory = JSON.parse(history).map((h) => {
                   let item = { ...h, selected: false };
 
+                  // 旧记录没有显式标记时，只能根据当时保存的选定域名迁移。
+                  // 没有 linkBaseURL 的记录按未勾选处理，不从 URL 猜测用户选择。
+                  if (typeof item.usedPublicBaseUrl !== "boolean") {
+                    item.usedPublicBaseUrl = Boolean(
+                      item.linkBaseURL &&
+                      this.getStoredLinkBaseURL(item.linkBaseURL, true) !== this.baseURL,
+                    );
+                    needsSave = true;
+                  }
+
                   // === 1. 修复污染的 URL 字段 ===
                   // 检查 URL 是否被污染（如 /file/https://... 或重复的域名）
                   if (item.url) {
-                    const cleanUrl = this.cleanUrlField(item.url);
+                    const cleanUrl = this.cleanUrlField(item.url, item.linkBaseURL, item.usedPublicBaseUrl);
                     if (cleanUrl !== item.url) {
                       item.url = cleanUrl;
                       needsSave = true;
@@ -5390,8 +5484,9 @@
           },
 
           // 清理污染的 URL 字段
-          cleanUrlField(url) {
+          cleanUrlField(url, selectedBaseURL, usedPublicBaseUrl) {
             if (!url) return url;
+            const linkBaseURL = this.getStoredLinkBaseURL(selectedBaseURL, usedPublicBaseUrl);
 
             // 情况1: /file/https://files.example.com/file/xxx.ext
             // 或 /file/https://... 这种污染格式
@@ -5404,7 +5499,7 @@
                 /\/file\/([^\/?#]+\.[a-zA-Z0-9]+)(?:[?#].*)?$/,
               );
               if (match) {
-                return `${this.baseURL}/file/${match[1]}`;
+                return `${linkBaseURL}/file/${match[1]}`;
               }
             }
 
@@ -5415,21 +5510,21 @@
               if (lastUrl) {
                 // 从中提取 fileId
                 const fileId = lastUrl[1].split("/file/").pop();
-                return `${this.baseURL}/file/${fileId}`;
+                return `${linkBaseURL}/file/${fileId}`;
               }
             }
 
-            // 情况3: 正常的完整 URL，确保使用当前域名
-            if (url.startsWith("https://") && url.includes("/file/")) {
+            // 情况3: 正常的完整 URL，保留上传时选定的域名
+            if (/^https?:\/\//i.test(url) && url.includes("/file/")) {
               const match = url.match(/\/file\/([^?#]+)/);
               if (match) {
-                return `${this.baseURL}/file/${match[1]}`;
+                return `${linkBaseURL}/file/${match[1]}`;
               }
             }
 
             // 情况4: 相对路径，补全域名
             if (url.startsWith("/file/")) {
-              return `${this.baseURL}${url}`;
+              return `${linkBaseURL}${url}`;
             }
 
             return url;
@@ -5622,6 +5717,8 @@
               });
               const status = await response.json();
               this.uploadLimits = status.uploadLimits || {};
+              this.publicBaseUrl = status.publicBaseUrl || "";
+              if (!this.publicBaseUrl) this.usePublicBaseUrl = false;
 
               // 检查各存储后端是否可用
               this.r2Available = this.storageEnabledFromStatus(status.r2);
@@ -5675,6 +5772,8 @@
               this.storageMode = "telegram";
               this.storageTarget = "Telegram 频道";
               this.uploadLimits = {};
+              this.publicBaseUrl = "";
+              this.usePublicBaseUrl = false;
               this.r2Available = false;
               this.s3Available = false;
               this.discordAvailable = false;

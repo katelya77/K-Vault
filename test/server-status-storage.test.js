@@ -64,6 +64,22 @@ describe('Server status storage semantics', function () {
     // Keep temp files to avoid flaky EBUSY on Windows CI/dev boxes.
   });
 
+  it('returns public link configuration without contacting storage providers', async function () {
+    process.env.PUBLIC_BASE_URL = 'https://public.example/cache/';
+    let providerCalls = 0;
+    global.fetch = async () => {
+      providerCalls += 1;
+      throw new Error('Unexpected provider probe');
+    };
+    const app = createApp();
+
+    const response = await app.fetch(new Request('http://localhost/api/status?view=public-links'));
+    assert.strictEqual(response.status, 200);
+    assert.strictEqual(response.headers.get('Cache-Control'), 'no-store');
+    assert.deepStrictEqual(await response.json(), { publicBaseUrl: 'https://public.example/cache' });
+    assert.strictEqual(providerCalls, 0);
+  });
+
   it('keeps enabled=true when storage is configured but connection fails', async function () {
     const app = createApp();
 

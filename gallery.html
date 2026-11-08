@@ -380,6 +380,8 @@
     .batch-btn.default { background: rgba(255,255,255,0.2); color: white; }
 
     .batch-btn:hover { transform: scale(1.05); filter: brightness(1.1); }
+    .batch-btn:disabled,
+    .batch-btn:disabled:hover { opacity: 0.45; cursor: not-allowed; transform: none; filter: none; }
 
     /* 预览弹窗 - 原生图片 / iframe */
     .preview-modal {
@@ -943,6 +945,10 @@
       <button class="batch-btn primary" @click="batchCopy">
         <i class="fas fa-copy"></i> 复制链接
       </button>
+      <button class="batch-btn primary" @click="batchCopyPublicLinks" :disabled="!publicLinkAvailable"
+              :title="publicLinkAvailable ? '使用公共域名复制所选文件链接' : '未配置不同于当前域名的 PUBLIC_BASE_URL'">
+        <i class="fas fa-link"></i> 复制公共访问链接
+      </button>
       <button class="batch-btn success" @click="batchDownload">
         <i class="fas fa-download"></i> 下载
       </button>
@@ -996,6 +1002,7 @@
       el: '#app',
       data: {
         baseURL: document.location.origin,
+        publicBaseUrl: '',
         images: [],
         loading: true,
         searchQuery: '',
@@ -1038,6 +1045,18 @@
         selectedCount() {
           return this.images.filter(img => img.selected).length;
         },
+        publicLinkBaseURL() {
+          try {
+            const url = new URL(this.publicBaseUrl);
+            if (['http:', 'https:'].includes(url.protocol) && !url.username && !url.password) {
+              return `${url.origin}${url.pathname.replace(/\/+$/, '')}`;
+            }
+          } catch (e) {}
+          return '';
+        },
+        publicLinkAvailable() {
+          return Boolean(this.publicLinkBaseURL) && this.publicLinkBaseURL !== this.baseURL;
+        },
         isAllSelected() {
           return this.filteredImages.length > 0 && this.filteredImages.every(img => img.selected);
         },
@@ -1076,6 +1095,18 @@
         }
       },
       methods: {
+        async loadPublicBaseUrl() {
+          this.publicBaseUrl = '';
+          try {
+            const response = await fetch('/api/status?view=public-links');
+            if (!response.ok) return;
+            const status = await response.json();
+            this.publicBaseUrl = status.publicBaseUrl || '';
+          } catch (e) {
+            this.publicBaseUrl = '';
+          }
+        },
+
         async loadImages() {
           this.loading = true;
           try {
@@ -1167,8 +1198,8 @@
           this.images.forEach(img => img.selected = false);
         },
 
-        formatLink(img) {
-          const url = `${this.baseURL}/file/${img.name}`;
+        formatLink(img, linkBaseURL = this.baseURL) {
+          const url = `${linkBaseURL}/file/${img.name}`;
           const name = img.metadata?.fileName || img.name;
           switch (this.linkFormat) {
             case 'markdown': return `![${name}](${url})`;
@@ -1189,6 +1220,15 @@
           const links = selected.map(img => this.formatLink(img)).join('\n');
           this.copyToClipboard(links);
           this.showToast(`已复制 ${selected.length} 个链接`, 'success');
+        },
+
+        batchCopyPublicLinks() {
+          if (!this.publicLinkAvailable) return;
+          const selected = this.images.filter(img => img.selected);
+          if (selected.length === 0) return;
+          const links = selected.map(img => this.formatLink(img, this.publicLinkBaseURL)).join('\n');
+          this.copyToClipboard(links);
+          this.showToast(`已复制 ${selected.length} 个公共访问链接`, 'success');
         },
 
         batchDownload() {
@@ -1367,6 +1407,7 @@
         if (!isAuth) return;
 
         this.loadImages();
+        this.loadPublicBaseUrl();
 
         // 键盘快捷键
         document.addEventListener('keydown', (e) => {

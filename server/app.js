@@ -2390,8 +2390,22 @@ function createApp() {
   // --- Status ---
   app.get('/api/status', async (c) => {
     const { storageRepo, storageFactory, authService, guestService, settingsStore } = getServices(c);
+    let publicBaseUrl = '';
+    try {
+      const url = new URL(String(container.config.publicBaseUrl || '').trim());
+      if (['http:', 'https:'].includes(url.protocol) && !url.username && !url.password) {
+        publicBaseUrl = `${url.origin}${url.pathname.replace(/\/+$/, '')}`;
+      }
+    } catch (_) {
+      // Leave the option unavailable when PUBLIC_BASE_URL is missing or invalid.
+    }
+
+    if (c.req.query('view') === 'public-links') {
+      return c.json({ publicBaseUrl }, 200, { 'Cache-Control': 'no-store' });
+    }
 
     const status = {
+      publicBaseUrl,
       telegram: {
         connected: false,
         enabled: false,

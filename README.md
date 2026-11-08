@@ -274,7 +274,7 @@ curl -i -X POST "http://localhost:8080/api/auth/login" \
 | 变量名 | 说明 | 示例 |
 | :--- | :--- | :--- |
 | `CUSTOM_BOT_API_URL` | K-Vault 运行环境能访问的自部署 Bot API 地址（不填则使用官方 API） | `https://bot-api.example.com` |
-| `PUBLIC_BASE_URL` | Webhook 回链时使用的公网域名（建议填写） | `https://img.example.com` |
+| `PUBLIC_BASE_URL` | Webhook 回链的公共地址。上传页可按次选择用它生成分享链接，图库也可单独复制公共链接。支持部署在反向代理的子路径下 | `https://img.example.com` |
 | `TG_WEBHOOK_SECRET` | Webhook 密钥，校验头 `X-Telegram-Bot-Api-Secret-Token` | `your-secret` |
 | `TELEGRAM_LINK_MODE` | Telegram 链接模式，设为 `signed` 启用签名直链 | `signed` |
 | `MINIMIZE_KV_WRITES` | 设为 `true` 时启用低 KV 写入策略（也会启用签名直链） | `true` |
