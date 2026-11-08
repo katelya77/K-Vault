@@ -42,9 +42,10 @@ Open:
 
 On first start, if `CONFIG_ENCRYPTION_KEY` and `SESSION_SECRET` are not provided, the container generates persistent values in `/app/data/runtime.env`. Recreating the container keeps them as long as the `kvault_data` volume is kept.
 
-For public deployments, set admin credentials:
+**Set a unique strong admin password before public deployment.** The credential-free quick start above is for isolated local testing only:
 
 ```bash
+export BASIC_PASS="$(openssl rand -base64 32)"
 docker rm -f kvault
 docker run -d \
   --name kvault \
@@ -52,7 +53,7 @@ docker run -d \
   -p 8080:8080 \
   -v kvault_data:/app/data \
   -e BASIC_USER=admin \
-  -e BASIC_PASS='replace-with-a-strong-password' \
+  -e BASIC_PASS \
   ghcr.io/katelya77/k-vault:latest
 ```
 
@@ -70,6 +71,7 @@ Create `.env` only when you want fixed credentials, domain, default storage, or 
 
 ```bash
 cp .env.example .env
+# Set a unique strong BASIC_PASS in .env before starting publicly.
 docker compose up -d
 ```
 
@@ -77,6 +79,7 @@ Windows PowerShell:
 
 ```powershell
 Copy-Item .env.example .env
+# Set a unique strong BASIC_PASS in .env before starting publicly.
 docker compose up -d
 ```
 
