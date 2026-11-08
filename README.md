@@ -495,10 +495,7 @@ curl "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getWebhookInfo"
 4. 在 Cloudflare Pages 添加 `HF_TOKEN` 和 `HF_REPO` 环境变量
 5. 重新部署
 
-**限制：**
-- 普通上传（base64）：约 35MB/文件
-- LFS 上传：最大 50GB/文件
-- 免费用户仓库总大小：约 50GB
+K-Vault 会根据 Hugging Face 的预上传响应自动选择普通上传或 LFS，无需额外配置。Cloudflare Pages 版的上传入口在转发前会限制单个文件为 35 MiB。超过此大小的文件请使用 R2、S3 或 WebDAV。
 
 ### WebDAV 存储（可选）
 
@@ -664,9 +661,9 @@ curl "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getWebhookInfo"
 | S3 兼容存储 | 100MB（分片上传） |
 | Discord（无 Boost） | 25MB |
 | Discord（Level 2+） | 50-100MB |
-| HuggingFace | 35MB（普通）/ 50GB（LFS） |
+| HuggingFace（Cloudflare Pages） | 35 MiB |
 
-> 说明：`/api/upload-from-url` 当前仍按 20MB 限制处理 Telegram 上传。
+> Cloudflare Pages 的 `/api/upload-from-url` 在 Telegram 模式下默认处理 20 MiB 及以内的文件。绑定了 `R2_BUCKET` 时，超过 20 MiB 的文件自动存入 R2。该接口的文件大小上限为 100 MiB。
 
 ---
 

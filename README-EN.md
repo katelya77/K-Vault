@@ -427,10 +427,7 @@ Use HuggingFace Datasets API to store files. Files are saved to a Dataset reposi
 4. Add `HF_TOKEN` and `HF_REPO` environment variables in Cloudflare Pages
 5. Redeploy
 
-**Limits:**
-- Regular upload (base64): about 35MB/file
-- LFS upload: up to 50GB/file
-- Total free-tier repository size: about 50GB
+K-Vault automatically selects regular upload or LFS based on the Hugging Face preupload response. The Cloudflare Pages upload endpoints cap each file at 35 MiB before sending it to Hugging Face. Use R2, S3, or WebDAV for larger files.
 
 ---
 
@@ -533,9 +530,9 @@ Allows non-logged-in users to upload files. Site owners can configure whether it
 | S3-compatible storage | 100MB (chunked upload) |
 | Discord (non-Boosted) | 25MB |
 | Discord (Level 2+) | 50-100MB |
-| HuggingFace | 35MB (regular) / 50GB (LFS) |
+| HuggingFace (Cloudflare Pages) | 35 MiB |
 
-> Note: `/api/upload-from-url` currently still applies a 20MB limit for Telegram uploads.
+> On Cloudflare Pages, `/api/upload-from-url` sends files up to 20 MiB to Telegram in Telegram mode. With `R2_BUCKET` bound, larger files automatically go to R2. The endpoint accepts files up to 100 MiB.
 
 ---
 
