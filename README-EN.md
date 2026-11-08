@@ -175,16 +175,17 @@ Open:
 
 On first start, if `CONFIG_ENCRYPTION_KEY` and `SESSION_SECRET` are not provided, the container generates persistent values in `/app/data/runtime.env`. Recreating the container keeps them as long as the Docker volume is kept.
 
-For public deployments, set admin credentials explicitly:
+**Production warning:** The credential-free command above is for isolated local testing only. Do not expose port 8080 to the Internet without admin authentication, upload limits, and network protection. Generate a unique admin password first:
 
 ```bash
+export BASIC_PASS="$(openssl rand -base64 32)"
 docker run -d \
   --name kvault \
   --restart unless-stopped \
   -p 8080:8080 \
   -v kvault_data:/app/data \
   -e BASIC_USER=admin \
-  -e BASIC_PASS='replace-with-a-strong-password' \
+  -e BASIC_PASS \
   ghcr.io/katelya77/k-vault:latest
 ```
 
@@ -200,6 +201,7 @@ The Compose file pulls `ghcr.io/katelya77/k-vault:latest` by default. `.env` is 
 
 ```bash
 cp .env.example .env
+# Set a strong unique BASIC_PASS in .env before exposing the service.
 docker compose up -d
 ```
 
@@ -217,7 +219,9 @@ Common Docker variables:
 
 You can also start Docker first and add/test/switch storage profiles later in the admin console. The WebDAV page, API Tokens, API v1 uploads, direct links, and short links all use the same `8080` entrypoint.
 
-For full Docker guide, see [README-DOCKER.md](README-DOCKER.md).
+For full Docker guide, see [README-DOCKER.md](README-DOCKER.md). Read the [public deployment security guide](docs/secure-public-deployment.md) before exposing your instance.
+
+For local Pages development, `npm start` creates gitignored `.dev.vars` with unique administrator credentials. Do not commit it or reuse local credentials in production.
 
 ### WebDAV Regression Validation (Works for Pages and Docker)
 
@@ -227,7 +231,7 @@ Example:
 
 ```bash
 BASE_URL=https://your-domain \
-BASIC_USER=admin BASIC_PASS=your_password \
+BASIC_USER=admin BASIC_PASS="$BASIC_PASS" \
 SMOKE_STORAGE_TYPE=webdav \
 SMOKE_STORAGE_CONFIG_JSON='{"baseUrl":"https://dav.example.com","username":"u","password":"p","rootPath":"uploads"}' \
 node scripts/storage-regression.js
