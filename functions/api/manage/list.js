@@ -4,6 +4,8 @@ const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tiff', 
 const VIDEO_EXTS = new Set(['mp4', 'webm', 'ogg', 'avi', 'mov', 'wmv', 'flv', 'mkv', 'm4v', '3gp', 'ts']);
 const AUDIO_EXTS = new Set(['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'wma', 'ape', 'opus']);
 
+import sharePassword from '../../../server/lib/utils/share-password.cjs';
+
 function normalizeFolderPath(value = '') {
   const raw = String(value || '').replace(/\\/g, '/').trim();
   const output = [];
@@ -67,7 +69,7 @@ function normalizeKey(key) {
   return {
     ...key,
     metadata: {
-      ...metadata,
+      ...sharePassword.publicShareMetadata(metadata),
       storageType,
       fileType,
       folderPath,

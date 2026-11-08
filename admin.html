@@ -1289,6 +1289,7 @@
                       </el-dropdown-menu>
                     </el-dropdown>
                     <el-button size="mini" type="info" @click.stop="handleEditName(item)">编辑</el-button>
+                    <el-button v-if="showLogoutButton" size="mini" :icon="item.metadata.sharePasswordProtected ? 'el-icon-lock' : 'el-icon-unlock'" title="分享密码" aria-label="分享密码" @click.stop="openSharePassword(item)"></el-button>
                     <el-button size="mini" type="danger" @click.stop="handleDelete(index, item.name)">删除</el-button>
                   </div>
               </div>
@@ -1354,6 +1355,7 @@
                     <!-- 控制按钮区域 -->
                   <div class="video-controls">
                     <button class="control-btn like-btn" @click.stop="toggleLike(index, item.name)"><i :class="item.metadata.liked ? 'fas fa-heart liked' : 'far fa-heart'"></i></button>
+                    <button v-if="showLogoutButton" class="control-btn" @click.stop="openSharePassword(item)" title="分享密码" aria-label="分享密码"><i :class="item.metadata.sharePasswordProtected ? 'fas fa-lock' : 'fas fa-lock-open'"></i></button>
                     <button class="control-btn edit-btn" @click.stop="handleEditName(item)"><i class="fas fa-edit"></i></button>
                     <button class="control-btn select-btn" @click.stop="toggleSelect(index, item.name)"><i :class="item.selected ? 'fas fa-square-check selected' : 'far fa-square'"></i></button>
                     <button class="control-btn" @click.stop="openPreview(item)" title="预览"><i class="fas fa-eye"></i></button>
@@ -1417,6 +1419,7 @@
                   <!-- 控制按钮区域 -->
                   <div class="audio-controls">
                     <button class="control-btn like-btn" @click.stop="toggleLike(index, item.name)"><i :class="item.metadata.liked ? 'fas fa-heart liked' : 'far fa-heart'"></i></button>
+                    <button v-if="showLogoutButton" class="control-btn" @click.stop="openSharePassword(item)" title="分享密码" aria-label="分享密码"><i :class="item.metadata.sharePasswordProtected ? 'fas fa-lock' : 'fas fa-lock-open'"></i></button>
                     <button class="control-btn edit-btn" @click.stop="handleEditName(item)"><i class="fas fa-edit"></i></button>
                     <button class="control-btn select-btn" @click.stop="toggleSelect(index, item.name)"><i :class="item.selected ? 'fas fa-square-check selected' : 'far fa-square'"></i></button>
                     <button class="control-btn" @click.stop="openPreview(item)" title="预览"><i class="fas fa-eye"></i></button>
@@ -1455,6 +1458,7 @@
                   <!-- 控制按钮区域 -->
                   <div class="file-controls">
                     <button class="control-btn like-btn" @click.stop="toggleLike(index, item.name)"><i :class="item.metadata.liked ? 'fas fa-heart liked' : 'far fa-heart'"></i></button>
+                    <button v-if="showLogoutButton" class="control-btn" @click.stop="openSharePassword(item)" title="分享密码" aria-label="分享密码"><i :class="item.metadata.sharePasswordProtected ? 'fas fa-lock' : 'fas fa-lock-open'"></i></button>
                     <button class="control-btn edit-btn" @click.stop="handleEditName(item)"><i class="fas fa-edit"></i></button>
                     <button class="control-btn select-btn" @click.stop="toggleSelect(index, item.name)"><i :class="item.selected ? 'fas fa-square-check selected' : 'far fa-square'"></i></button>
                     <button class="control-btn" @click.stop="openPreview(item)" title="预览"><i class="fas fa-eye"></i></button>
@@ -1511,7 +1515,7 @@
                       {{ getStorageLabel(scope.row.name) }}
                     </template>
                   </el-table-column>
-                  <el-table-column label="操作" width="236" fixed="right">
+                  <el-table-column label="操作" width="264" fixed="right">
                     <template slot-scope="scope">
                       <div class="list-actions">
                         <el-button type="text" size="mini" @click="toggleLike(0, scope.row.name)">
@@ -1519,6 +1523,7 @@
                         </el-button>
                         <el-button type="text" size="mini" @click="handleCopy(0, scope.row.name)">复制</el-button>
                         <el-button type="text" size="mini" @click="handleEditName(scope.row)">重命名</el-button>
+                        <el-button v-if="showLogoutButton" type="text" size="mini" @click="openSharePassword(scope.row)">{{ scope.row.metadata.sharePasswordProtected ? '改密码' : '设密码' }}</el-button>
                         <el-button type="text" size="mini" @click="openPreview(scope.row)">预览</el-button>
                         <el-button type="text" size="mini" style="color:#f56c6c" @click="handleDelete(0, scope.row.name)">删除</el-button>
                       </div>
@@ -1737,6 +1742,29 @@ curl -X POST "{SITE_URL}/api/v1/import" \
     </el-dialog>
 
     <el-dialog
+      title="分享密码"
+      :visible.sync="sharePasswordDialogVisible"
+      width="min(420px, 92vw)"
+      :show-close="!savingSharePassword"
+      :close-on-press-escape="!savingSharePassword"
+      :close-on-click-modal="false"
+      @close="sharePasswordInput = ''"
+      append-to-body>
+      <p v-if="sharePasswordFile">{{ sharePasswordFile.metadata.fileName }}</p>
+      <p>接收者需要输入密码才能下载。请将密码与链接分开发送。</p>
+      <label for="share-password-input">新密码</label>
+      <el-input
+        id="share-password-input" v-model="sharePasswordInput" type="password" autocomplete="new-password"
+        maxlength="128" :disabled="savingSharePassword" @keyup.enter.native="saveSharePassword(sharePasswordInput)">
+      </el-input>
+      <span slot="footer">
+        <el-button v-if="sharePasswordFile && sharePasswordFile.metadata.sharePasswordProtected" type="text" :disabled="savingSharePassword" @click="removeSharePassword">移除密码</el-button>
+        <el-button :disabled="savingSharePassword" @click="sharePasswordDialogVisible = false">取消</el-button>
+        <el-button type="primary" :disabled="!sharePasswordInput" :loading="savingSharePassword" @click="saveSharePassword(sharePasswordInput)">保存</el-button>
+      </span>
+    </el-dialog>
+
+    <el-dialog
       title="移动文件"
       :visible.sync="moveDialogVisible"
       width="680px"
@@ -1879,6 +1907,11 @@ curl -X POST "{SITE_URL}/api/v1/import" \
     el: '#app',
     data: {
       baseURL: document.location.origin,
+      showLogoutButton: false,
+      sharePasswordDialogVisible: false,
+      sharePasswordFile: null,
+      sharePasswordInput: '',
+      savingSharePassword: false,
       Number: 0,
       totalCount: 0,
       fileConfig: {
@@ -3427,6 +3460,10 @@ curl -X POST "{SITE_URL}/api/v1/import" \
       
       // 打开预览 - 使用模态框（与首页保持一致，不跳转新标签页）
       openPreview(item) {
+        if (item.metadata?.sharePasswordProtected) {
+          window.open(this.fileLink(item.name), '_blank', 'noopener,noreferrer');
+          return;
+        }
         this.revealPreview(item);
         const fileName = item.metadata?.fileName || item.name;
         const fileUrl = `${this.baseURL}/file/${item.name}`;
@@ -3920,15 +3957,57 @@ curl -X POST "{SITE_URL}/api/v1/import" \
         document.execCommand('copy');
         document.body.removeChild(textarea);
       },
+      openSharePassword(item) {
+        this.sharePasswordFile = item;
+        this.sharePasswordInput = '';
+        this.sharePasswordDialogVisible = true;
+      },
+      async removeSharePassword() {
+        const confirmed = await this.$confirm('移除后，持有链接的人可以无需密码下载。', '移除分享密码', {
+          type: 'warning', confirmButtonText: '移除', cancelButtonText: '取消'
+        }).then(() => true, () => false);
+        if (confirmed) await this.saveSharePassword(null);
+      },
+      async saveSharePassword(password) {
+        if (password === '' || this.savingSharePassword) return;
+        const file = this.sharePasswordFile;
+        this.savingSharePassword = true;
+        try {
+          const response = await fetch('./api/admin/share-password', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: file.name, password }),
+          });
+          const result = await response.json();
+          if (!response.ok || !result.success) {
+            throw new Error(result.error?.message || '保存失败，请重试');
+          }
+          this.$set(file.metadata, 'sharePasswordProtected', result.sharePasswordProtected);
+          this.sharePasswordDialogVisible = false;
+          this.$message.success(result.sharePasswordProtected ? '已保存分享密码' : '已移除分享密码');
+        } catch (error) {
+          this.$message.error(error.message || '保存失败，请重试');
+        } finally {
+          this.savingSharePassword = false;
+        }
+      },
+      fileLink(key) {
+        return `${this.baseURL}/file/${encodeURIComponent(key)}`;
+      },
       handleCopy(index, key) {
-        const link = `${this.baseURL}/file/${key}`;
+        const link = this.fileLink(key);
         (navigator.clipboard?.writeText(link) || this.copyToClipboardFallback(link))
           .then(() => this.$message.success('复制文件链接成功~'))
           .catch(() => this.$message.error('自动复制失败，请手动复制链接：' + link));
       },
       handleQuickCopy(format, key) {  // 快速复制不同格式
-        const url = `${this.baseURL}/file/${key}`;
+        const url = this.fileLink(key);
         const file = this.tableData.find(f => f.name === key);
+        if (file?.metadata?.sharePasswordProtected) {
+          this.handleCopy(0, key);
+          return;
+        }
         const name = file?.metadata?.fileName || key;
         let link = url;
         
@@ -4008,14 +4087,15 @@ curl -X POST "{SITE_URL}/api/v1/import" \
         }).catch(() => this.$message.info('已取消批量删除'));
       },
       handleBatchCopy() {  // 批量复制链接
-        const links = this.selectedFiles.map(file => `${document.location.origin}/file/${file.name}`).join('\n');
+        const links = this.selectedFiles.map(file => this.fileLink(file.name)).join('\n');
         (navigator.clipboard?.writeText(links) || this.copyToClipboardFallback(links))
           .then(() => this.$message.success('批量复制链接成功~'));
       },
       handleBatchCopyMarkdown() {  // 批量复制Markdown格式
         const links = this.selectedFiles.map(file => {
-          const url = `${document.location.origin}/file/${file.name}`;
+          const url = this.fileLink(file.name);
           const name = file.metadata?.fileName || file.name;
+          if (file.metadata?.sharePasswordProtected) return `[${name}](${url})`;
           return `![${name}](${url})`;
         }).join('\n');
         (navigator.clipboard?.writeText(links) || this.copyToClipboardFallback(links))
@@ -4023,8 +4103,9 @@ curl -X POST "{SITE_URL}/api/v1/import" \
       },
       handleBatchCopyHtml() {  // 批量复制HTML格式
         const links = this.selectedFiles.map(file => {
-          const url = `${document.location.origin}/file/${file.name}`;
+          const url = this.fileLink(file.name);
           const name = file.metadata?.fileName || file.name;
+          if (file.metadata?.sharePasswordProtected) return `<a href="${url}">下载文件</a>`;
           return `<img src="${url}" alt="${name}">`;
         }).join('\n');
         (navigator.clipboard?.writeText(links) || this.copyToClipboardFallback(links))
@@ -4035,8 +4116,13 @@ curl -X POST "{SITE_URL}/api/v1/import" \
         this.selectedFiles.forEach((file, index) => {
           setTimeout(() => {
             const link = document.createElement('a');
-            link.href = `/file/${file.name}`;
-            link.download = file.metadata.fileName || file.name;
+            link.href = this.fileLink(file.name);
+            if (file.metadata?.sharePasswordProtected) {
+              link.target = '_blank';
+              link.rel = 'noopener noreferrer';
+            } else {
+              link.download = file.metadata.fileName || file.name;
+            }
             link.click();
           }, index * 800);
         });
@@ -4881,10 +4967,15 @@ curl -X POST "{SITE_URL}/api/v1/import" \
         return String(item?.name || item?.metadata?.fileName || '');
       },
       isPreviewRevealed(item) {
+        if (item?.metadata?.sharePasswordProtected) return false;
         const key = this.getPreviewKey(item);
         return Boolean(key && this.revealedPreviewKeys[key]);
       },
       revealPreview(item) {
+        if (item?.metadata?.sharePasswordProtected) {
+          window.open(this.fileLink(item.name), '_blank', 'noopener,noreferrer');
+          return;
+        }
         const key = this.getPreviewKey(item);
         if (!key || this.isPreviewRevealed(item)) return;
         this.$set(this.revealedPreviewKeys, key, true);
@@ -4893,7 +4984,7 @@ curl -X POST "{SITE_URL}/api/v1/import" \
         return !this.isPreviewRevealed(item) && !this.shouldAutoLoadPreview(item, explicitType);
       },
       shouldAutoLoadPreview(item, explicitType = '') {
-        if (!item) return false;
+        if (!item || item.metadata?.sharePasswordProtected) return false;
         if (this.isNsfwContent(item)) return false;
         if (this.loadMode === 'noImage') return false;
 
@@ -4914,6 +5005,7 @@ curl -X POST "{SITE_URL}/api/v1/import" \
         return false;
       },
       getPreviewGateTitle(item, explicitType = '') {
+        if (item.metadata?.sharePasswordProtected) return '文件受密码保护';
         if (this.isNsfwContent(item)) return '敏感预览已模糊';
         const type = explicitType || this.getActualFileType(item.name);
         const labels = {
@@ -4924,6 +5016,7 @@ curl -X POST "{SITE_URL}/api/v1/import" \
         return labels[type] || '预览已暂停';
       },
       getPreviewGateSubtitle(item, explicitType = '') {
+        if (item.metadata?.sharePasswordProtected) return '点击输入密码并下载';
         const size = Number(item?.metadata?.fileSize || 0);
         const sizeLabel = size > 0 ? ` · ${this.formatFileSize(size)}` : '';
         const type = explicitType || this.getActualFileType(item?.name || '');

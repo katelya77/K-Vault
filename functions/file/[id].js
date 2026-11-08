@@ -3,6 +3,7 @@ import { getDiscordFileUrl } from '../utils/discord.js';
 import { getHuggingFaceFile } from '../utils/huggingface.js';
 import { getWebDAVFile } from '../utils/webdav.js';
 import { getGitHubFile } from '../utils/github.js';
+import sharePassword from '../../server/lib/utils/share-password.cjs';
 import {
   buildTelegramBotApiUrl,
   buildTelegramFileUrl,
@@ -61,10 +62,17 @@ const MIME_TYPES = {
 };
 
 export async function onRequest(context) {
+  return serveFile(context, { browser: true });
+}
+
+export async function serveFile(context, { browser = false } = {}) {
   const { request, env, params } = context;
 
   if (request.method === 'OPTIONS') {
     return handleOptions();
+  }
+  if (!['GET', 'HEAD', 'POST'].includes(request.method)) {
+    return errorResponse('Method not allowed', 405);
   }
 
   try {
@@ -82,21 +90,20 @@ export async function onRequest(context) {
     }
 
     const signedTelegramMeta = await parseSignedTelegramFileId(fileId, env);
-    if (signedTelegramMeta) {
-      return handleSignedTelegramFile(context, signedTelegramMeta);
-    }
+    const { record, kvKey } = signedTelegramMeta
+      ? await getSignedTelegramRecord(env, signedTelegramMeta)
+      : await getRecordWithKey(env, fileId);
 
-    const recordResult = await getRecordWithKey(env, fileId);
-    const record = recordResult?.record;
-    const kvKey = recordResult?.kvKey || fileId;
-
-    if (env.img_url && !record?.metadata) {
+    if (!signedTelegramMeta && env.img_url && !record?.metadata) {
       return errorResponse('File not found', 404);
+    }
+    if (request.method === 'POST' && !record?.metadata?.sharePasswordHash) {
+      return errorResponse('Method not allowed', 405);
     }
 
     let shareAccess = null;
     if (record?.metadata) {
-      shareAccess = await verifyShareAccess(context, record.metadata, kvKey);
+      shareAccess = await verifyShareAccess(context, record.metadata, kvKey, { browser });
       if (shareAccess?.response) {
         return shareAccess.response;
       }
@@ -104,7 +111,9 @@ export async function onRequest(context) {
 
     const storageType = inferStorageType(fileId, record?.metadata || {});
     let response;
-    if (storageType === 'r2') {
+    if (signedTelegramMeta) {
+      response = await handleSignedTelegramFile(context, signedTelegramMeta, record);
+    } else if (storageType === 'r2') {
       response = await handleR2File(context, record?.metadata?.r2Key || fileId, record);
     } else if (storageType === 's3') {
       response = await handleS3File(context, fileId, record);
@@ -120,8 +129,8 @@ export async function onRequest(context) {
       response = await handleTelegramFile(context, fileId, record);
     }
 
-    if (shareAccess?.trackDownload && shouldCountAsDownload(request.method, response)) {
-      const updatePromise = incrementShareDownloadCount(env, shareAccess.kvKey, shareAccess.metadata);
+    if (shareAccess?.downloadCount != null && shouldCountAsDownload(request.method, response)) {
+      const updatePromise = env.img_url.put(`share_count:${kvKey}`, String(shareAccess.downloadCount + 1));
       if (typeof context.waitUntil === 'function') {
         context.waitUntil(updatePromise.catch(() => {}));
       } else {
@@ -129,6 +138,8 @@ export async function onRequest(context) {
       }
     }
 
+    if (request.method === 'POST' && response.ok) return sharePassword.forceAttachment(response);
+    if (request.method === 'HEAD') return new Response(null, response);
     return response;
   } catch (error) {
     console.error('file route error:', error);
@@ -233,78 +244,47 @@ async function getRecordWithKey(env, fileId) {
   return { record: null, kvKey: fileId };
 }
 
-function getSharePassword(request) {
-  const url = new URL(request.url);
-  return String(
-    url.searchParams.get('password')
-    || request.headers.get('X-File-Password')
-    || request.headers.get('X-Share-Password')
-    || ''
-  );
+async function getSignedTelegramRecord(env, signedMeta) {
+  const kvKey = `${signedMeta.fileId}.${signedMeta.fileExtension || 'bin'}`;
+  const record = await env.img_url?.getWithMetadata(kvKey);
+  return record?.metadata ? { record, kvKey } : getRecordWithKey(env, kvKey);
 }
 
-async function sha256Hex(input) {
-  const bytes = new TextEncoder().encode(String(input || ''));
-  const digest = await crypto.subtle.digest('SHA-256', bytes);
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-function timingSafeEqual(a, b) {
-  if (a.length !== b.length) return false;
-  let mismatch = 0;
-  for (let i = 0; i < a.length; i += 1) {
-    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return mismatch === 0;
-}
-
-async function verifyShareAccess(context, metadata = {}, kvKey = '') {
+async function verifyShareAccess({ request, env }, metadata, kvKey, { browser }) {
   const expiresAt = Number(metadata.shareExpiresAt || 0);
   if (Number.isFinite(expiresAt) && expiresAt > 0 && Date.now() > expiresAt) {
     return { response: errorResponse('File link has expired', 410) };
   }
 
   const maxDownloads = Number(metadata.shareMaxDownloads || 0);
-  const currentDownloads = Number(metadata.shareDownloadCount || 0);
-  if (Number.isFinite(maxDownloads) && maxDownloads > 0 && currentDownloads >= maxDownloads) {
-    return { response: errorResponse('File download limit reached', 410) };
+  let downloadCount = null;
+  if (Number.isFinite(maxDownloads) && maxDownloads > 0) {
+    // Keep download writes separate so a stale download cannot restore an old password.
+    const storedCount = await env.img_url.get(`share_count:${kvKey}`);
+    downloadCount = Math.max(Number(storedCount || 0), Number(metadata.shareDownloadCount || 0));
+    if (downloadCount >= maxDownloads) {
+      return { response: errorResponse('File download limit reached', 410) };
+    }
   }
 
   if (metadata.sharePasswordHash) {
-    const providedPassword = getSharePassword(context.request);
-    if (!providedPassword) {
-      return { response: errorResponse('File password required', 401) };
-    }
-    const expected = await sha256Hex(`${String(metadata.sharePasswordSalt || '')}:${providedPassword}`);
-    if (!timingSafeEqual(String(metadata.sharePasswordHash || ''), expected)) {
-      return { response: errorResponse('File password invalid', 403) };
+    const status = await sharePassword.checkPassword(request, metadata);
+    if (status !== 200) {
+      const prompt = browser && sharePassword.passwordPrompt(request, status);
+      return { response: prompt || errorResponse(sharePassword.passwordErrorMessage(status), status) };
     }
   }
 
   return {
     response: null,
-    trackDownload: Number.isFinite(maxDownloads) && maxDownloads > 0,
-    kvKey,
-    metadata,
+    downloadCount,
   };
 }
 
 function shouldCountAsDownload(method, response) {
-  if (String(method || '').toUpperCase() !== 'GET') return false;
+  if (method !== 'GET' && method !== 'POST') return false;
   if (!response) return false;
   return response.status === 200 || response.status === 206;
-}
-
-async function incrementShareDownloadCount(env, kvKey, metadata = {}) {
-  if (!env?.img_url || !kvKey || !metadata) return;
-  const nextCount = Number(metadata.shareDownloadCount || 0) + 1;
-  const nextMetadata = {
-    ...metadata,
-    shareDownloadCount: nextCount,
-  };
-  await env.img_url.put(kvKey, '', { metadata: nextMetadata });
 }
 
 async function handleTelegramFile(context, fileId, record = null) {
@@ -352,7 +332,7 @@ async function handleTelegramFile(context, fileId, record = null) {
   });
 }
 
-async function handleSignedTelegramFile(context, signedMeta) {
+async function handleSignedTelegramFile(context, signedMeta, record) {
   const { request, env } = context;
 
   const filePath = await getTelegramFilePath(env, signedMeta.fileId);
@@ -360,7 +340,7 @@ async function handleSignedTelegramFile(context, signedMeta) {
     return errorResponse('Failed to get file path from Telegram', 500);
   }
 
-  await backfillSignedTelegramMetadata(env, signedMeta);
+  if (!record?.metadata) await backfillSignedTelegramMetadata(env, signedMeta);
 
   const fileName = signedMeta.fileName || `${signedMeta.fileId}.${signedMeta.fileExtension || 'bin'}`;
   const mimeType = signedMeta.mimeType || getMimeType(fileName);
@@ -479,7 +459,7 @@ async function handleR2File(context, r2Key, record = null) {
   }
 
   if (!object) {
-    object = await env.R2_BUCKET.get(r2Key);
+    object = request.method === 'HEAD' ? await env.R2_BUCKET.head(r2Key) : await env.R2_BUCKET.get(r2Key);
   }
 
   if (!object) {

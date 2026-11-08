@@ -352,8 +352,7 @@ describe('API v1 file share limits', function () {
     });
 
     assert.strictEqual(response.status, 200);
-    const record = await scenario.env.img_url.getWithMetadata(scenario.fileKey);
-    assert.strictEqual(Number(record?.metadata?.shareDownloadCount || 0), 1);
+    assert.strictEqual(await scenario.env.img_url.get(`share_count:${scenario.fileKey}`), '1');
   });
 
   it('serves R2 byte ranges for media previews', async function () {
@@ -372,10 +371,153 @@ describe('API v1 file share limits', function () {
     const body = new Uint8Array(await response.arrayBuffer());
     assert.deepStrictEqual(Array.from(body), [2, 3]);
   });
+
+  it('manages a browser share password without allowing direct or ranged reads', async function () {
+    const { onRequest: adminAuth } = await import('../functions/api/admin/_middleware.js');
+    const { onRequestPost: update } = await import('../functions/api/admin/share-password.js');
+    const { onRequest: serve } = await import('../functions/file/[id].js');
+    const { onRequest: redirect } = await import('../functions/s/[slug].js');
+    const { onRequest: list } = await import('../functions/api/manage/list.js');
+    const scenario = await createFileScenario({ shareMaxDownloads: 2 });
+    const { env, fileKey } = scenario;
+    const origin = 'https://example.com';
+    const path = `/file/${encodeURIComponent(fileKey)}`;
+    const password = '文件 + test&';
+    const adminHeader = 'Basic ' + btoa('test-admin:local-admin-credential');
+
+    function change(nextPassword, authorization) {
+      const request = new Request(origin + '/api/admin/share-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(authorization && { Authorization: authorization }) },
+        body: JSON.stringify({ id: fileKey, password: nextPassword }),
+      });
+      return adminAuth({ request, env, next: () => update({ request, env }) });
+    }
+
+    const pendingWrites = [];
+    const read = (options, query = '') => serve({
+      request: new Request(origin + path + query, options),
+      env,
+      params: { id: encodeURIComponent(fileKey) },
+      waitUntil: (task) => pendingWrites.push(task),
+    });
+    const submit = (value) => read({
+      method: 'POST',
+      headers: { Accept: 'text/html' },
+      body: new URLSearchParams({ password: value }),
+    });
+
+    assert.strictEqual((await change(password)).status, 503);
+    Object.assign(env, { BASIC_USER: 'test-admin', BASIC_PASS: 'local-admin-credential' });
+    assert.strictEqual((await change(password)).status, 401);
+    assert.strictEqual((await change('', adminHeader)).status, 400);
+    assert.strictEqual((await change(password, adminHeader)).status, 200);
+
+    const { keys } = await (await list({ request: new Request(origin + '/api/manage/list'), env })).json();
+    assert.strictEqual(keys[0].metadata.sharePasswordProtected, true);
+    assert.ok(!('sharePasswordHash' in keys[0].metadata) && !('sharePasswordSalt' in keys[0].metadata));
+
+    await env.img_url.put('share_slug:existing-slug', fileKey);
+    const shortLink = await redirect({
+      request: new Request(origin + '/s/existing-slug'), env, params: { slug: 'existing-slug' },
+    });
+    assert.strictEqual(shortLink.headers.get('Location'), origin + path);
+
+    const prompt = await read({ headers: { Accept: 'text/html' } });
+    assert.strictEqual(prompt.status, 401);
+    assert.match(prompt.headers.get('Cache-Control'), /no-store/);
+    assert.match(await prompt.text(), /<form method="post">/);
+    assert.strictEqual((await submit('wrong')).status, 403);
+    assert.strictEqual((await submit('x'.repeat(8192))).status, 400);
+    assert.strictEqual((await read({ method: 'HEAD' })).status, 401);
+    assert.strictEqual((await read({ headers: { Range: 'bytes=0-1' } })).status, 401);
+    const deniedApi = await invokeV1FileGet({ ...scenario, headers: { Accept: 'text/html', Range: 'bytes=0-1' } });
+    assert.strictEqual(deniedApi.status, 401);
+    assert.strictEqual((await deniedApi.json()).error.message, 'File password required');
+
+    const download = await submit(password);
+    assert.strictEqual(download.status, 200);
+    assert.match(download.headers.get('Content-Disposition'), /^attachment/);
+    assert.deepStrictEqual(Array.from(new Uint8Array(await download.arrayBuffer())), [1, 2, 3, 4]);
+    await Promise.all(pendingWrites);
+
+    const range = await read({ headers: { Range: 'bytes=0-1' } }, `?password=${encodeURIComponent(password)}`);
+    assert.strictEqual(range.status, 206);
+    assert.deepStrictEqual(Array.from(new Uint8Array(await range.arrayBuffer())), [1, 2]);
+    await Promise.all(pendingWrites);
+    assert.strictEqual((await submit(password)).status, 410);
+
+    assert.strictEqual((await change(null, adminHeader)).status, 200);
+    const record = await env.img_url.getWithMetadata(fileKey);
+    assert.strictEqual(record.metadata.sharePasswordHash, undefined);
+    assert.strictEqual(await env.img_url.get(`share_count:${fileKey}`), '2');
+    assert.strictEqual((await read()).status, 410);
+  });
+
+  it('checks indexed passwords before fetching signed Telegram links and still serves unindexed links', async function () {
+    const { onRequest: serve } = await import('../functions/file/[id].js');
+    const { createSignedTelegramFileId } = await import('../functions/utils/telegram.js');
+    const env = {
+      img_url: new MemoryKV(), TG_Bot_Token: 'fixture-token', FILE_URL_SECRET: 'test-signing-value',
+      TELEGRAM_METADATA_MODE: 'off',
+    };
+    const fileId = 'telegram-fixture-file';
+    const signed = await createSignedTelegramFileId({ fileId, fileExtension: 'txt' }, env);
+    const read = (headers) => serve({
+      request: new Request(`https://example.com/file/${signed}`, { headers }), env, params: { id: signed },
+    });
+    const salt = 'previous-salt-format';
+    await env.img_url.put(`${fileId}.txt`, '', {
+      metadata: { sharePasswordSalt: salt, sharePasswordHash: await sha256Hex(`${salt}:legacy`) },
+    });
+    const originalFetch = globalThis.fetch;
+    let upstreamCalls = 0;
+    globalThis.fetch = async (url) => {
+      upstreamCalls += 1;
+      if (String(url).includes('/getFile')) return Response.json({ ok: true, result: { file_path: 'files/fixture.txt' } });
+      return new Response('fixture-bytes');
+    };
+    try {
+      assert.strictEqual((await read()).status, 401);
+      assert.strictEqual((await read({ Range: 'bytes=0-3', 'X-File-Password': 'wrong' })).status, 403);
+      assert.strictEqual(upstreamCalls, 0);
+      assert.strictEqual(await (await read({ 'X-Share-Password': 'legacy' })).text(), 'fixture-bytes');
+      await env.img_url.delete(`${fileId}.txt`);
+      assert.strictEqual(await (await read()).text(), 'fixture-bytes');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });
 
 
 describe('API v1 upload folder policy (Pages)', function () {
+  it('does not reuse a public deduplication result for a password-protected upload', async function () {
+    const { onRequestPost: upload } = await import('../functions/api/v1/upload.js');
+    const { onRequest: serve } = await import('../functions/file/[id].js');
+    const { env } = await createEnvAndToken(['upload']);
+    const content = 'same-fixture-bytes';
+    env.disable_telemetry = 'true';
+    await env.img_url.put(`sha_dup:${await sha256Hex(content)}`, JSON.stringify({ publicId: 'r2:public.txt' }));
+
+    const body = new FormData();
+    body.set('file', new File([content], 'fixture.txt'));
+    body.set('storage', 'r2');
+    body.set('deduplicate', 'true');
+    body.set('password', 'fixture-share');
+    const response = await upload({
+      request: new Request('https://example.com/api/v1/upload', { method: 'POST', body }),
+      env, data: { apiToken: { id: 'fixture-token' } },
+      next: () => new Response(),
+    });
+    assert.strictEqual(response.status, 200);
+    const payload = await response.json();
+    assert.notStrictEqual(payload.file.id, 'r2:public.txt');
+    assert.strictEqual((await serve({
+      request: new Request(payload.links.download), env, params: { id: payload.file.id },
+    })).status, 401);
+  });
+
   it('checks the same canonical folder that is used for the upload', async function () {
     const { onRequestPost: upload } = await import('../functions/api/v1/upload.js');
     const { onRequest: middleware } = await import('../functions/api/v1/_middleware.js');

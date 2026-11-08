@@ -327,7 +327,7 @@ Cloudflare Pages 需要能从外部访问 `CUSTOM_BOT_API_URL`。上例中的 `1
 - `TELEGRAM_LINK_MODE=signed`（仅 Telegram 文件使用签名直链）
 - 或 `MINIMIZE_KV_WRITES=true`（同时影响分片上传任务写入策略）
 
-启用后，Telegram 文件默认仍会写入轻量 KV 索引（用于后台列表和管理操作），下载时通过签名参数直接解析 `file_id`，从而降低 KV 读写压力。设置 `TELEGRAM_METADATA_MODE=off` 时，签名 Telegram 上传会跳过 API 上传后的 KV 元数据探测：`password`、`expires_in`、`max_downloads`、`slug` 会被忽略，响应也不提供删除链接。设置 `MINIMIZE_KV_WRITES=true` 时，API Token 鉴权仍需读取 KV，但 `lastUsedAt` 仅在首次使用及之后至少间隔一小时才写回。
+启用后，Telegram 文件默认仍会写入轻量 KV 索引（用于后台列表和管理操作）。下载时从签名解析 `file_id`，并检查已有索引中的分享限制。设置 `TELEGRAM_METADATA_MODE=off` 时，签名 Telegram 上传会跳过 API 上传后的 KV 元数据探测：`password`、`expires_in`、`max_downloads`、`slug` 会被忽略，响应也不提供删除链接。设置 `MINIMIZE_KV_WRITES=true` 时，API Token 鉴权仍需读取 KV，但 `lastUsedAt` 仅在首次使用及之后至少间隔一小时才写回。
 
 > **可选取舍：** 若你希望 Telegram 文件完全不写入 KV，请额外设置 `TELEGRAM_METADATA_MODE=off`。此时文件不会出现在后台列表，也无法使用依赖 KV 元数据的标签/黑白名单/删除流程。
 
@@ -635,6 +635,12 @@ K-Vault 会根据 Hugging Face 的预上传响应自动选择普通上传或 LFS
 | 登录页 | `/login.html` | 后台登录 |
 
 ---
+
+### 网页分享密码
+
+管理员可以在文件管理页面为已索引的文件设置、更换或移除分享密码。复制原文件链接并单独发送密码。接收者用浏览器打开直链或短链，输入密码后即可下载。API 客户端仍可使用 `X-File-Password`、`X-Share-Password` 或原有的 `password` 查询参数。未索引的 Telegram 签名链接无法在管理页设置密码。
+
+密码保护覆盖经过 K-Vault 的下载。请将存储源文件保持私有，并通过 K-Vault 分享。Cloudflare Pages 通过 Workers KV 保存设置，新增、更换或移除密码可能需要 60 秒或更久才能在所有地区生效。[Cloudflare KV 一致性说明](https://developers.cloudflare.com/kv/concepts/how-kv-works/#consistency)
 
 ## 使用限制
 

@@ -24,6 +24,7 @@ const { AUDIT_EVENTS, writeAuditLog, listAuditLogs } = require('./lib/utils/audi
 const { safeLogError } = require('./lib/utils/redact');
 const { toStorageErrorPayload } = require('./lib/utils/storage-error');
 const { createShareSignature, verifyShareSignature } = require('./lib/utils/share-link');
+const sharePassword = require('./lib/utils/share-password.cjs');
 const {
   getTelegramFileFromMessage,
   createSignedTelegramFileId,
@@ -692,27 +693,6 @@ function createApp() {
     return normalized.slice(0, 64);
   }
 
-  function sha256Hex(input) {
-    return crypto.createHash('sha256').update(String(input || '')).digest('hex');
-  }
-
-  function randomString(length) {
-    const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    const bytes = crypto.randomBytes(length);
-    let output = '';
-    for (let i = 0; i < length; i += 1) {
-      output += chars[bytes[i] % chars.length];
-    }
-    return output;
-  }
-
-  function timingSafeEqualText(left, right) {
-    const a = Buffer.from(String(left || ''), 'utf8');
-    const b = Buffer.from(String(right || ''), 'utf8');
-    if (a.length !== b.length) return false;
-    return crypto.timingSafeEqual(a, b);
-  }
-
   function normalizeMimeType(fileName = '', fallback = 'application/octet-stream') {
     const extension = String(fileName || '').split('.').pop()?.toLowerCase() || '';
     const map = {
@@ -773,30 +753,20 @@ function createApp() {
     };
   }
 
-  function getSharePassword(c) {
-    const url = new URL(c.req.url);
-    return String(
-      url.searchParams.get('password')
-      || c.req.header('X-File-Password')
-      || c.req.header('X-Share-Password')
-      || ''
-    );
-  }
-
   function shareErrorResponse({ apiErrors, code, message, status }) {
     if (apiErrors) {
       return apiV1Error(code, message, status);
     }
-    return new Response(message, { status });
+    return new Response(message, { status, headers: { 'Cache-Control': 'no-store' } });
   }
 
   function shouldCountAsDownload(c, response) {
-    if (String(c.req.method || '').toUpperCase() !== 'GET') return false;
+    if (c.req.method !== 'GET' && c.req.method !== 'POST') return false;
     if (!response) return false;
     return response.status === 200 || response.status === 206;
   }
 
-  function verifyShareAccess(c, file, { apiErrors = false } = {}) {
+  async function verifyShareAccess(c, file, { apiErrors = false } = {}) {
     const metadata = file?.metadata || {};
     const expiresAt = Number(metadata.shareExpiresAt || 0);
     if (Number.isFinite(expiresAt) && expiresAt > 0 && Date.now() > expiresAt) {
@@ -824,26 +794,15 @@ function createApp() {
     }
 
     if (metadata.sharePasswordHash) {
-      const password = getSharePassword(c);
-      if (!password) {
+      const status = await sharePassword.checkPassword(c.req.raw, metadata);
+      if (status !== 200) {
+        const prompt = !apiErrors && sharePassword.passwordPrompt(c.req.raw, status);
         return {
-          response: shareErrorResponse({
+          response: prompt || shareErrorResponse({
             apiErrors,
-            code: 'FILE_PASSWORD_REQUIRED',
-            message: 'File password required',
-            status: 401,
-          }),
-        };
-      }
-
-      const expected = sha256Hex(`${String(metadata.sharePasswordSalt || '')}:${password}`);
-      if (!timingSafeEqualText(expected, metadata.sharePasswordHash)) {
-        return {
-          response: shareErrorResponse({
-            apiErrors,
-            code: 'FILE_ACCESS_DENIED',
-            message: 'File password invalid',
-            status: 403,
+            code: status === 401 ? 'FILE_PASSWORD_REQUIRED' : 'FILE_ACCESS_DENIED',
+            message: sharePassword.passwordErrorMessage(status),
+            status,
           }),
         };
       }
@@ -1065,6 +1024,7 @@ function createApp() {
     headers.set('Access-Control-Allow-Headers', 'Range, Content-Type, Accept, Origin');
     headers.set('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges, Content-Disposition');
     headers.set('Cache-Control', 'no-store, max-age=0');
+    headers.set('CDN-Cache-Control', 'no-store');
 
     if (!headers.get('content-type') && result.file.mime_type) {
       headers.set('Content-Type', result.file.mime_type);
@@ -1077,13 +1037,7 @@ function createApp() {
     return headers;
   }
 
-  async function handleSignedTelegramFile(id, range, storageRepo, c, headOnly = false) {
-    const env = { ...process.env, FILE_URL_SECRET: container.config.configEncryptionKey };
-    const parsed = parseSignedTelegramFileId(id, env);
-    if (!parsed?.fileId) {
-      return c.text('Invalid or expired signed file link.', 403);
-    }
-
+  async function handleSignedTelegramFile(parsed, range, storageRepo, c) {
     // Resolve Telegram storage config
     const telegramConfigs = storageRepo.findEnabledByType('telegram');
     let tgConfig = telegramConfigs[0]?.config;
@@ -1117,16 +1071,13 @@ function createApp() {
     headers.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
     headers.set('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges, Content-Disposition');
     headers.set('Cache-Control', 'no-store, max-age=0');
+    headers.set('CDN-Cache-Control', 'no-store');
     if (!headers.get('content-type') && parsed.mimeType) {
       headers.set('Content-Type', parsed.mimeType);
     }
     if (!headers.get('content-disposition')) {
       const safeName = encodeURIComponent(parsed.fileName || `${parsed.fileId}.${parsed.fileExtension}`);
       headers.set('Content-Disposition', `inline; filename="${safeName}"; filename*=UTF-8''${safeName}`);
-    }
-
-    if (headOnly) {
-      return new Response(null, { status: upstream.status, statusText: upstream.statusText, headers });
     }
 
     return new Response(upstream.body, { status: upstream.status, statusText: upstream.statusText, headers });
@@ -1348,6 +1299,29 @@ function createApp() {
   app.get('/api/manage/logout', handleManageLogout);
   app.post('/api/manage/logout', handleManageLogout);
 
+  app.post('/api/admin/share-password', async (c) => {
+    const unauthorized = requireAdminAuth(c);
+    if (unauthorized) return unauthorized;
+
+    const fetchSite = c.req.header('Sec-Fetch-Site');
+    if (fetchSite && fetchSite !== 'same-origin') {
+      return apiV1Error('INVALID_ORIGIN', 'Open the dashboard on this site to change the password.', 403);
+    }
+    if (c.req.header('Content-Type')?.split(';')[0].trim().toLowerCase() !== 'application/json') {
+      return apiV1Error('VALIDATION_ERROR', 'Expected a JSON request.', 400);
+    }
+    const { id, password } = await c.req.json().catch(() => null) || {};
+    if (typeof id !== 'string' || !id || !sharePassword.isValidPasswordSetting(password)) {
+      return apiV1Error('VALIDATION_ERROR', 'A file id and a password of 1–128 characters (or null) are required.', 400);
+    }
+    const { fileRepo } = getServices(c);
+    const extra = await sharePassword.passwordMetadata(password);
+    if (!fileRepo.updateMetadata(id, { extra })) {
+      return apiV1Error('FILE_NOT_FOUND', 'Indexed file not found.', 404);
+    }
+    return apiV1Success({ sharePasswordProtected: password !== null });
+  });
+
   // --- Admin API Token management (fail-closed, requirement #1) ---
   app.get('/api/admin/tokens', (c) => {
     const unauthorized = requireAdminAuth(c);
@@ -1556,6 +1530,7 @@ function createApp() {
 
     const url = new URL(c.req.url);
     const storage = String(body.storage || url.searchParams.get('storage') || '').trim().toLowerCase();
+    const password = String(body.password || url.searchParams.get('password') || '');
     const storageMode = storage || asString(body.storageMode || body.storage_mode);
     // Requirement #10: per-token policy enforcement for API uploads.
     const uploadFolder = normalizeFolderPath(body.folderPath || body.folder || '');
@@ -1583,9 +1558,10 @@ function createApp() {
 
     // Requirement #11: SHA-256 content deduplication for small uploads.
     const contentSha256 = sha256HexBytes(Buffer.from(fileBuffer));
-    if (fileSize <= DEDUP_MAX_BYTES) {
+    if (!password && fileSize <= DEDUP_MAX_BYTES) {
       const existing = findDeduplicatedFile(container.db, container.fileRepo, contentSha256);
-      if (existing && !enforceTokenPolicy(c, { storage: existing.storage_type, folderPath: existing.folder_path })) {
+      if (existing && !existing.metadata?.sharePasswordHash
+        && !enforceTokenPolicy(c, { storage: existing.storage_type, folderPath: existing.folder_path })) {
         const dedupPayload = {
           file: mapV1File(existing),
           links: {
@@ -1668,11 +1644,8 @@ function createApp() {
       extra.shareSlug = slug;
     }
 
-    const password = String(body.password || url.searchParams.get('password') || '');
     if (password) {
-      const salt = randomString(12);
-      extra.sharePasswordSalt = salt;
-      extra.sharePasswordHash = sha256Hex(`${salt}:${password}`);
+      Object.assign(extra, await sharePassword.passwordMetadata(password));
     }
 
     if (Object.keys(extra).length > 0) {
@@ -1690,7 +1663,7 @@ function createApp() {
       },
     };
     if (idemCacheKey) saveIdempotentResponse(container.db, idemCacheKey, uploadPayload, 200);
-    saveShaDedupIndex(container.db, contentSha256, fileRecord);
+    if (!password) saveShaDedupIndex(container.db, contentSha256, fileRecord);
 
     return apiV1Success(uploadPayload);
   });
@@ -1962,7 +1935,7 @@ function createApp() {
       return apiV1Error('FILE_NOT_FOUND', 'File not found.', 404);
     }
 
-    const shareAccess = verifyShareAccess(c, file, { apiErrors: true });
+    const shareAccess = await verifyShareAccess(c, file, { apiErrors: true });
     if (shareAccess.response) return shareAccess.response;
 
     try {
@@ -2793,96 +2766,57 @@ function createApp() {
     });
   });
 
-  app.get('/file/:id', async (c) => {
+  async function servePublicFile(c, id, signedTelegram = null) {
     const { uploadService, storageRepo, fileRepo } = getServices(c);
-    const id = decodeURIComponent(c.req.param('id'));
-    const range = c.req.header('range');
-
-    // Handle signed Telegram file IDs (tgs_ prefix)
-    if (id.startsWith('tgs_')) {
-      try {
-        return await handleSignedTelegramFile(id, range, storageRepo, c);
-      } catch (error) {
-        console.error('signed telegram file proxy error:', error);
-        return c.text(`Signed file proxy error: ${error?.message || 'Unknown error'}`, 502);
-      }
+    const recordId = signedTelegram ? `${signedTelegram.fileId}.${signedTelegram.fileExtension || 'bin'}` : id;
+    const file = fileRepo.getById(recordId);
+    if (c.req.method === 'POST' && !file?.metadata?.sharePasswordHash) {
+      return c.text('Method not allowed', 405);
     }
 
-    const file = fileRepo.getById(id);
-    let shareAccess = { response: null, trackDownload: false };
-    if (file) {
-      shareAccess = verifyShareAccess(c, file);
-      if (shareAccess.response) return shareAccess.response;
-    }
+    const shareAccess = await verifyShareAccess(c, file);
+    if (shareAccess.response) return shareAccess.response;
 
     try {
-      const result = await uploadService.getFileResponse(id, range);
-      if (!result) {
-        return c.text('File not found', 404);
+      const range = c.req.header('range');
+      let response;
+      if (signedTelegram) {
+        response = await handleSignedTelegramFile(signedTelegram, range, storageRepo, c);
+      } else {
+        const result = await uploadService.getFileResponse(id, range);
+        if (!result) return c.text('File not found', 404);
+
+        const upstream = result.response;
+        response = new Response(upstream.body, {
+          status: upstream.status,
+          statusText: upstream.statusText,
+          headers: buildFileProxyHeaders(result, upstream.headers),
+        });
       }
 
-      const upstream = result.response;
-      const headers = buildFileProxyHeaders(result, upstream.headers);
-
-      const response = new Response(upstream.body, {
-        status: upstream.status,
-        statusText: upstream.statusText,
-        headers,
-      });
-
-      if (file && shareAccess?.trackDownload && shouldCountAsDownload(c, response)) {
+      if (file && shareAccess.trackDownload && shouldCountAsDownload(c, response)) {
         incrementShareDownloadCount(fileRepo, file);
       }
 
+      if (c.req.method === 'POST' && response.ok) return sharePassword.forceAttachment(response);
       return response;
     } catch (error) {
       console.error('file proxy route error:', error);
       return c.text(`File proxy error: ${error?.message || 'Unknown error'}`, 502);
     }
+  }
+
+  app.on(['GET', 'POST'], '/file/:id', (c) => {
+    const id = decodeURIComponent(c.req.param('id'));
+    if (!id.startsWith('tgs_')) return servePublicFile(c, id);
+
+    const env = { ...process.env, FILE_URL_SECRET: container.config.configEncryptionKey };
+    const parsed = parseSignedTelegramFileId(id, env);
+    if (!parsed?.fileId) return c.text('Invalid or expired signed file link.', 403);
+    return servePublicFile(c, id, parsed);
   });
 
   app.options('/file/:id', (c) => c.body(null, 204));
-  app.on('HEAD', '/file/:id', async (c) => {
-    const { uploadService, storageRepo, fileRepo } = getServices(c);
-    const id = decodeURIComponent(c.req.param('id'));
-    const range = c.req.header('range');
-
-    if (id.startsWith('tgs_')) {
-      try {
-        return await handleSignedTelegramFile(id, range, storageRepo, c, true);
-      } catch (error) {
-        console.error('signed telegram file HEAD error:', error);
-        return c.body(null, 502);
-      }
-    }
-
-    const file = fileRepo.getById(id);
-    if (file) {
-      const shareAccess = verifyShareAccess(c, file);
-      if (shareAccess.response) return shareAccess.response;
-    }
-
-    try {
-      const result = await uploadService.getFileResponse(id, range);
-      if (!result) {
-        return c.body(null, 404);
-      }
-
-      const upstream = result.response;
-      const headers = buildFileProxyHeaders(result, upstream.headers);
-
-      return new Response(null, {
-        status: upstream.status,
-        statusText: upstream.statusText,
-        headers,
-      });
-    } catch (error) {
-      console.error('file proxy HEAD route error:', error);
-      return c.body(null, 502, {
-        'X-File-Proxy-Error': String(error?.message || 'Unknown error').slice(0, 200),
-      });
-    }
-  });
 
   app.get('/s/:slug', (c) => {
     const { fileRepo } = getServices(c);
@@ -2913,12 +2847,10 @@ function createApp() {
     return c.redirect(redirectUrl.toString(), 302);
   });
 
-  app.get('/share/:id', async (c) => {
-    const { uploadService } = getServices(c);
+  app.on(['GET', 'POST'], '/share/:id', (c) => {
     const fileId = decodeURIComponent(c.req.param('id'));
     const expiresAt = Number(c.req.query('exp') || 0);
     const signature = c.req.query('sig') || '';
-    const range = c.req.header('range');
 
     if (!Number.isFinite(expiresAt) || expiresAt <= 0) {
       return c.text('Invalid share expiry.', 400);
@@ -2932,25 +2864,7 @@ function createApp() {
       return c.text('Invalid share signature.', 403);
     }
 
-    try {
-      const result = await uploadService.getFileResponse(fileId, range);
-      if (!result) {
-        return c.text('File not found', 404);
-      }
-
-      const upstream = result.response;
-      const headers = buildFileProxyHeaders(result, upstream.headers);
-      headers.set('Cache-Control', 'private, max-age=60');
-
-      return new Response(upstream.body, {
-        status: upstream.status,
-        statusText: upstream.statusText,
-        headers,
-      });
-    } catch (error) {
-      console.error('share proxy route error:', error);
-      return c.text(`Share proxy error: ${error?.message || 'Unknown error'}`, 502);
-    }
+    return servePublicFile(c, fileId);
   });
 
   app.options('/share/:id', (c) => c.body(null, 204));

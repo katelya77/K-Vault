@@ -39,7 +39,7 @@ export async function onRequest(context) {
       if (!r2Key) throw new Error('Failed to resolve R2 key.');
 
       await env.R2_BUCKET.delete(r2Key);
-      await cleanupShareSlugMapping(env, metadata, kvKey);
+      await cleanupShareRecords(env, metadata, kvKey);
       await env.img_url.delete(kvKey);
       await purgeEdgeCache(request, fileId);
 
@@ -60,7 +60,7 @@ export async function onRequest(context) {
       } catch (error) {
         console.error('S3 delete error (best-effort):', error);
       }
-      await cleanupShareSlugMapping(env, metadata, kvKey);
+      await cleanupShareRecords(env, metadata, kvKey);
       await env.img_url.delete(kvKey);
       await purgeEdgeCache(request, fileId);
 
@@ -86,7 +86,7 @@ export async function onRequest(context) {
         console.error('Discord delete error (best-effort):', error);
       }
 
-      await cleanupShareSlugMapping(env, metadata, kvKey);
+      await cleanupShareRecords(env, metadata, kvKey);
       await env.img_url.delete(kvKey);
       await purgeEdgeCache(request, fileId);
 
@@ -108,7 +108,7 @@ export async function onRequest(context) {
         console.error('HuggingFace delete error (best-effort):', error);
       }
 
-      await cleanupShareSlugMapping(env, metadata, kvKey);
+      await cleanupShareRecords(env, metadata, kvKey);
       await env.img_url.delete(kvKey);
       await purgeEdgeCache(request, fileId);
 
@@ -131,7 +131,7 @@ export async function onRequest(context) {
         console.error('WebDAV delete error (best-effort):', error);
       }
 
-      await cleanupShareSlugMapping(env, metadata, kvKey);
+      await cleanupShareRecords(env, metadata, kvKey);
       await env.img_url.delete(kvKey);
       await purgeEdgeCache(request, fileId);
 
@@ -152,7 +152,7 @@ export async function onRequest(context) {
         console.error('GitHub delete error (best-effort):', error);
       }
 
-      await cleanupShareSlugMapping(env, metadata, kvKey);
+      await cleanupShareRecords(env, metadata, kvKey);
       await env.img_url.delete(kvKey);
       await purgeEdgeCache(request, fileId);
 
@@ -177,7 +177,7 @@ export async function onRequest(context) {
       telegramDeleteError = error;
       console.error('Telegram deleteMessage threw:', error);
     } finally {
-      await cleanupShareSlugMapping(env, metadata, kvKey);
+      await cleanupShareRecords(env, metadata, kvKey);
       await env.img_url.delete(kvKey);
       await purgeEdgeCache(request, fileId);
     }
@@ -272,8 +272,13 @@ function sanitizeSlug(rawValue = '') {
   return value;
 }
 
-async function cleanupShareSlugMapping(env, metadata = {}, kvKey = '') {
+async function cleanupShareRecords(env, metadata = {}, kvKey = '') {
   if (!env?.img_url || !kvKey) return;
+  if (Number(metadata.shareMaxDownloads) > 0) {
+    await env.img_url.delete(`share_count:${kvKey}`).catch((error) => {
+      console.warn('Failed to cleanup share download count:', error?.message || error);
+    });
+  }
   const slug = sanitizeSlug(metadata?.shareSlug || '');
   if (!slug) return;
 

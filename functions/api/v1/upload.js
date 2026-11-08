@@ -2,6 +2,7 @@ import { onRequestPost as uploadInternal } from '../../upload.js';
 import { parseSignedTelegramFileId, shouldWriteTelegramMetadata } from '../../utils/telegram.js';
 import { checkUploadPolicy } from '../../utils/policy-enforce.js';
 import { normalizeFolderPath } from '../../utils/folder-path.js';
+import sharePassword from '../../../server/lib/utils/share-password.cjs';
 import { apiError, apiSuccess, buildAbsoluteUrl, parsePositiveInt, readIdempotentResponse, saveIdempotentResponse } from '../../utils/api-v1.js';
 
 const STORAGE_PREFIXES = ['r2:', 's3:', 'discord:', 'hf:', 'webdav:', 'github:', 'img:', 'vid:', 'aud:', 'doc:', ''];
@@ -38,25 +39,6 @@ function normalizeStorageType(name = '', metadata = {}) {
   if (keyName.startsWith('webdav:')) return 'webdav';
   if (keyName.startsWith('github:')) return 'github';
   return 'telegram';
-}
-
-function randomString(length) {
-  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  const bytes = new Uint8Array(length);
-  crypto.getRandomValues(bytes);
-  let output = '';
-  for (let i = 0; i < length; i += 1) {
-    output += chars[bytes[i] % chars.length];
-  }
-  return output;
-}
-
-async function sha256Hex(input) {
-  const bytes = new TextEncoder().encode(String(input || ''));
-  const digest = await crypto.subtle.digest('SHA-256', bytes);
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('');
 }
 
 async function findRecordByFileId(env, fileId) {
@@ -132,10 +114,7 @@ async function applyApiUploadMetadata(env, key, originalMetadata, options = {}) 
 
   const password = String(options.password || '');
   if (password) {
-    const salt = randomString(12);
-    const hash = await sha256Hex(`${salt}:${password}`);
-    nextMetadata.sharePasswordSalt = salt;
-    nextMetadata.sharePasswordHash = hash;
+    Object.assign(nextMetadata, await sharePassword.passwordMetadata(password));
   }
 
   if (slug) {
@@ -256,12 +235,13 @@ export async function onRequestPost(context) {
 
   // Content dedup for small uploads (requirement #11): identical content returns the existing object.
   let contentSha256 = '';
-  if (deduplicate && file.size > 0 && file.size <= DEDUP_MAX_INLINE_BYTES && env?.img_url) {
+  if (!password && deduplicate && file.size > 0 && file.size <= DEDUP_MAX_INLINE_BYTES && env?.img_url) {
     try {
       const bytes = await file.arrayBuffer();
       contentSha256 = await sha256HexBuffer(bytes);
       const existing = await env.img_url.get(`sha_dup:${contentSha256}`, { type: 'json' });
-      if (existing?.publicId) {
+      const indexedFile = existing?.publicId && await findRecordByFileId(env, existing.publicId);
+      if (existing?.publicId && !indexedFile?.record?.metadata?.sharePasswordHash) {
         const dedupBody = {
           success: true,
           file: {

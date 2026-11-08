@@ -124,6 +124,110 @@ describe('Docker runtime API v1 parity', function () {
     );
   });
 
+  it('protects direct, signed Telegram and legacy signed downloads with the same browser password', async function () {
+    const { createShareSignature } = require('../server/lib/utils/share-link');
+    const { createSignedTelegramFileId } = require('../server/lib/utils/telegram-webhook');
+    const db = initDatabase(process.env.DB_PATH);
+    const config = loadConfig(process.env);
+    const storageRepo = new StorageConfigRepository(db, config);
+    const storage = storageRepo.create({
+      name: 'Fixture Telegram', type: 'telegram', config: { botToken: 'fixture-token', chatId: 'chat' },
+      enabled: true, isDefault: true,
+    });
+    const fileRepo = new FileRepository(db);
+    const fileId = 'sample-file';
+    const id = `${fileId}.txt`;
+    fileRepo.create({
+      id, storageConfigId: storage.id, storageType: 'telegram', storageKey: fileId,
+      fileName: id, fileSize: 12, mimeType: 'text/plain', extra: { shareSlug: 'sample' },
+    });
+
+    const origin = 'http://localhost';
+    const direct = `/file/${id}`;
+    const alias = '/file/' + createSignedTelegramFileId({ fileId, fileExtension: 'txt' }, {
+      FILE_URL_SECRET: config.configEncryptionKey,
+    });
+    const expiresAt = Date.now() + 60_000;
+    const signature = createShareSignature({ fileId: id, expiresAt, secret: config.sessionSecret });
+    const legacy = `/share/${id}?exp=${expiresAt}&sig=${signature}`;
+    const password = 'fixture-share+password';
+    const adminRequest = (value, auth = {}) => new Request(origin + '/api/admin/share-password', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', ...auth },
+      body: JSON.stringify({ id, password: value }),
+    });
+
+    assert.strictEqual((await createApp().fetch(adminRequest(password))).status, 503);
+    process.env.BASIC_USER = 'admin';
+    process.env.BASIC_PASS = 'docker-parity-pass';
+    const auth = { Authorization: `Basic ${Buffer.from('admin:docker-parity-pass').toString('base64')}` };
+    const app = createApp();
+    assert.strictEqual((await app.fetch(adminRequest(password))).status, 401);
+    assert.strictEqual((await app.fetch(adminRequest(password, auth))).status, 200);
+    assert.strictEqual(fileRepo.getById(id).metadata.shareSlug, 'sample');
+    const { keys } = await (await app.request(origin + '/api/manage/list', { headers: auth })).json();
+    assert.strictEqual(keys[0].metadata.sharePasswordProtected, true);
+    assert.ok(!('sharePasswordHash' in keys[0].metadata) && !('sharePasswordSalt' in keys[0].metadata));
+
+    const tokenResponse = await app.request(origin + '/api/admin/tokens', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', ...auth },
+      body: JSON.stringify({ name: 'fixture-read', scopes: ['read'] }),
+    });
+    const { token } = await tokenResponse.json();
+    assert.strictEqual(tokenResponse.status, 201);
+    const apiPath = `/api/v1/file/${id}`;
+
+    const originalFetch = globalThis.fetch;
+    let upstreamCalls = 0;
+    globalThis.fetch = async (url, options) => {
+      upstreamCalls += 1;
+      if (String(url).includes('/getFile')) return Response.json({ ok: true, result: { file_path: 'files/fixture.txt' } });
+      if (new Headers(options?.headers).has('range')) {
+        return new Response('fixt', { status: 206, headers: { 'Content-Range': 'bytes 0-3/12' } });
+      }
+      return new Response('fixture-file');
+    };
+    const read = (path, options) => app.request(origin + path, options);
+    const submit = (path, value) => read(path, {
+      method: 'POST', headers: { Accept: 'text/html' }, body: new URLSearchParams({ password: value }),
+    });
+    try {
+      assert.strictEqual((await read('/s/sample')).headers.get('Location'), origin + direct);
+      for (const path of [direct, alias, legacy]) {
+        const prompt = await read(path, { headers: { Accept: 'text/html' } });
+        assert.strictEqual(prompt.status, 401);
+        assert.match(await prompt.text(), /<form method="post">/);
+        assert.strictEqual((await read(path, { method: 'HEAD' })).status, 401);
+        assert.strictEqual((await read(path, { headers: { Range: 'bytes=0-3' } })).status, 401);
+        assert.strictEqual((await submit(path, 'incorrect')).status, 403);
+      }
+      const denied = await read(apiPath, { headers: { Authorization: `Bearer ${token}`, Accept: 'text/html' } });
+      assert.strictEqual(denied.status, 401);
+      assert.strictEqual((await denied.json()).error.code, 'FILE_PASSWORD_REQUIRED');
+      assert.strictEqual(upstreamCalls, 0);
+
+      for (const path of [direct, alias, legacy]) {
+        const response = await submit(path, password);
+        assert.strictEqual(response.status, 200);
+        assert.match(response.headers.get('Content-Disposition'), /^attachment/);
+        assert.match(response.headers.get('Cache-Control'), /no-store/);
+        assert.strictEqual(await response.text(), 'fixture-file');
+      }
+      const range = await read(apiPath, {
+        headers: { Authorization: `Bearer ${token}`, Range: 'bytes=0-3', 'X-File-Password': password },
+      });
+      assert.strictEqual(range.status, 206);
+      assert.strictEqual(await range.text(), 'fixt');
+      assert.strictEqual((await read(legacy.replace(signature, 'invalid'))).status, 403);
+
+      assert.strictEqual((await app.fetch(adminRequest(null, auth))).status, 200);
+      assert.strictEqual((await read(direct)).status, 200);
+      assert.strictEqual((await read(legacy)).status, 200);
+      assert.strictEqual((await read(alias)).status, 200);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it('moves files by stable id or unique display name without changing public links', async function () {
     const db = initDatabase(process.env.DB_PATH);
     const config = loadConfig(process.env);
