@@ -16,5 +16,7 @@ jobs:
         node-version: '22'
     - name: Install dependencies
       run: npm install
+    - name: Check committed secrets without displaying credential values
+      run: node scripts/check-public-secrets.js
     - name: Run tests
       run: npm run ci-test

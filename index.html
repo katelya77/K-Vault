@@ -5147,11 +5147,11 @@
           },
 
           // 核心方法：从污染的 URL 中提取干净的文件直链
-          // 无论输入是 ID、路径、还是完整 URL，都返回标准格式：https://pan.katelya.eu.org/file/{id}.{ext}
+          // 无论输入是 ID、路径、还是完整 URL，都返回标准格式：https://files.example.com/file/{id}.{ext}
           getCleanFileUrl(item) {
             let rawUrl = item.url || item.path || "";
 
-            // 情况1: 已经是标准直链格式 https://pan.katelya.eu.org/file/xxx.ext
+            // 情况1: 已经是标准直链格式 https://files.example.com/file/xxx.ext
             if (rawUrl.startsWith("https://") && rawUrl.includes("/file/")) {
               // 提取 /file/ 后面的部分作为 fileId
               const match = rawUrl.match(/\/file\/([^?#]+)/);
@@ -5393,7 +5393,7 @@
           cleanUrlField(url) {
             if (!url) return url;
 
-            // 情况1: /file/https://pan.katelya.eu.org/file/xxx.ext
+            // 情况1: /file/https://files.example.com/file/xxx.ext
             // 或 /file/https://... 这种污染格式
             if (
               url.includes("/file/https://") ||

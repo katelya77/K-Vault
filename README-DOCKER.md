@@ -42,9 +42,10 @@ docker run -d \
 
 首次启动时，如果没有传入 `CONFIG_ENCRYPTION_KEY` / `SESSION_SECRET`，容器会自动生成并保存到数据卷的 `/app/data/runtime.env`。只要保留 `kvault_data` 卷，重建容器不会丢失这些密钥。
 
-公网部署建议设置后台账号：
+**公网部署前必须设置强随机管理员密码**。上面的无凭据启动命令仅适合隔离的本地测试；下面先生成唯一密码：
 
 ```bash
+export BASIC_PASS="$(openssl rand -base64 32)"
 docker rm -f kvault
 docker run -d \
   --name kvault \
@@ -52,7 +53,7 @@ docker run -d \
   -p 8080:8080 \
   -v kvault_data:/app/data \
   -e BASIC_USER=admin \
-  -e BASIC_PASS='换成强密码' \
+  -e BASIC_PASS \
   ghcr.io/katelya77/k-vault:latest
 ```
 
@@ -70,6 +71,7 @@ docker compose up -d
 
 ```bash
 cp .env.example .env
+# 启动前编辑 .env，设置强随机 BASIC_PASS。
 docker compose up -d
 ```
 
@@ -77,6 +79,7 @@ Windows PowerShell：
 
 ```powershell
 Copy-Item .env.example .env
+# 启动前编辑 .env，设置强随机 BASIC_PASS。
 docker compose up -d
 ```
 

@@ -32,8 +32,8 @@
 
 ## 功能特性
 
-- **无限存储** - 不限数量的图片和文件上传
-- **完全免费** - 托管于 Cloudflare，免费额度内零成本
+- **多后端托管** - 实际容量与文件数量受选择的后端、配额、请求限制和成本约束
+- **免费额度可用** - 可在 Cloudflare 免费额度内运行，超出配额及部分存储服务可能计费
 - **免费域名** - 使用 `*.pages.dev` 二级域名，也支持自定义域名
 - **多存储后端** - 支持 Telegram、Cloudflare R2、S3 兼容存储、Discord、HuggingFace、WebDAV、GitHub
 - **Telegram Webhook 回链** - 机器人在频道/群接收文件后自动回复直链
@@ -165,16 +165,17 @@ docker run -d \
 
 首次启动时，如果没有提供 `CONFIG_ENCRYPTION_KEY` 和 `SESSION_SECRET`，容器会自动生成并保存到数据卷的 `/app/data/runtime.env`。删除容器不会丢失这些密钥；删除数据卷才会丢失。
 
-公网部署时建议显式设置后台账号：
+**生产提示：** 上面的无凭据命令仅用于本机隔离测试；不要在未配置管理员认证、上传限制和网络访问控制前将 8080 端口开放到公网。以下示例先生成随机密码，通过环境变量传入：
 
 ```bash
+export BASIC_PASS="$(openssl rand -base64 32)"
 docker run -d \
   --name kvault \
   --restart unless-stopped \
   -p 8080:8080 \
   -v kvault_data:/app/data \
   -e BASIC_USER=admin \
-  -e BASIC_PASS='换成强密码' \
+  -e BASIC_PASS \
   ghcr.io/katelya77/k-vault:latest
 ```
 
@@ -190,6 +191,7 @@ docker compose up -d
 
 ```bash
 cp .env.example .env
+# 编辑 .env，设置强随机 BASIC_PASS 后再暴露到公网。
 ```
 
 编辑 `.env` 后重启：
@@ -212,7 +214,9 @@ docker compose up -d
 
 Docker 下也可以不预先写存储环境变量，启动后到管理后台新增/测试/切换存储配置。WebDAV 页面、API Token、API v1 上传、短链和文件直链都走同一个 `8080` 入口。
 
-完整 Docker 说明请查看 [README-DOCKER.md](README-DOCKER.md)。
+完整 Docker 说明请查看 [README-DOCKER.md](README-DOCKER.md)。公开部署与凭据处理请查看 [安全部署指南](docs/secure-public-deployment.md)。
+
+本地 Pages 开发执行 `npm start` 时会创建被 Git 忽略的 `.dev.vars`，生成唯一管理员凭据；不要提交此文件或将开发环境密码复制到生产配置。
 
 ### WebDAV 回归验证（Cloudflare Pages / Docker 通用）
 
@@ -222,7 +226,7 @@ Docker 下也可以不预先写存储环境变量，启动后到管理后台新�
 
 ```bash
 BASE_URL=https://你的域名 \
-BASIC_USER=admin BASIC_PASS=your_password \
+BASIC_USER=admin BASIC_PASS="$BASIC_PASS" \
 SMOKE_STORAGE_TYPE=webdav \
 SMOKE_STORAGE_CONFIG_JSON='{"baseUrl":"https://dav.example.com","username":"u","password":"p","rootPath":"uploads"}' \
 node scripts/storage-regression.js
