@@ -19,6 +19,7 @@ export async function errorHandling(context) {
     return sentryPlugin({
       dsn: "https://219f636ac7bde5edab2c3e16885cb535@o4507041519108096.ingest.us.sentry.io/4507541492727808",
       tracesSampleRate: sampleRate,
+      requestDataOptions: { allowedHeaders: [], allowedCookies: [], allowedSearchParams: [] },
     })(context);;
   }
   return context.next();
@@ -28,15 +29,8 @@ export function telemetryData(context) {
   const env = context.env;
   if (typeof env.disable_telemetry == "undefined" || env.disable_telemetry == null || env.disable_telemetry == "") {
     try {
-      const parsedHeaders = {};
-      context.request.headers.forEach((value, key) => {
-        parsedHeaders[key] = value
-        //check if the value is empty
-        if (value.length > 0) {
-          context.data.sentry.setTag(key, value);
-        }
-      });
-      const CF = JSON.parse(JSON.stringify(context.request.cf));
+      const url = new URL(context.request.url);
+      const CF = context.request.cf || {};
       const parsedCF = {};
       for (const key in CF) {
         if (typeof CF[key] == "object") {
@@ -49,28 +43,25 @@ export function telemetryData(context) {
         }
       }
       const data = {
-        headers: parsedHeaders,
         cf: parsedCF,
-        url: context.request.url,
+        url: url.origin + url.pathname,
         method: context.request.method,
         redirect: context.request.redirect,
       }
       //get the url path
-      const urlPath = new URL(context.request.url).pathname;
-      const hostname = new URL(context.request.url).hostname;
-      context.data.sentry.setTag("path", urlPath);
+      context.data.sentry.setTag("path", url.pathname);
       context.data.sentry.setTag("url", data.url);
       context.data.sentry.setTag("method", context.request.method);
       context.data.sentry.setTag("redirect", context.request.redirect);
       context.data.sentry.setContext("request", data);
-      const transaction = context.data.sentry.startTransaction({ name: `${context.request.method} ${hostname}` });
+      const transaction = context.data.sentry.startTransaction({ name: `${context.request.method} ${url.hostname}` });
       //add the transaction to the context
       context.data.transaction = transaction;
       return context.next();
     } catch (e) {
       console.log(e);
     } finally {
-      context.data.transaction.finish();
+      context.data.transaction?.finish();
     }
   }
   return context.next();

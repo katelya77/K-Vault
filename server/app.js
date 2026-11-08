@@ -1557,16 +1557,6 @@ function createApp() {
     const url = new URL(c.req.url);
     const storage = String(body.storage || url.searchParams.get('storage') || '').trim().toLowerCase();
     const storageMode = storage || asString(body.storageMode || body.storage_mode);
-    const storageModeForLimit = storageMode || container.config.bootstrapDefaultStorage?.type || 'telegram';
-    const uploadLimit = getUploadLimits()[storageModeForLimit];
-    if (uploadLimit && fileSize > uploadLimit.maxBytes) {
-      return apiV1Error(
-        'FILE_TOO_LARGE',
-        uploadLimit.message || 'File exceeds selected storage limit.',
-        413
-      );
-    }
-
     // Requirement #10: per-token policy enforcement for API uploads.
     const uploadFolder = normalizeFolderPath(body.folderPath || body.folder || '');
     const uploadMime = file.type || normalizeMimeType(file.name);
@@ -1595,7 +1585,7 @@ function createApp() {
     const contentSha256 = sha256HexBytes(Buffer.from(fileBuffer));
     if (fileSize <= DEDUP_MAX_BYTES) {
       const existing = findDeduplicatedFile(container.db, container.fileRepo, contentSha256);
-      if (existing) {
+      if (existing && !enforceTokenPolicy(c, { storage: existing.storage_type, folderPath: existing.folder_path })) {
         const dedupPayload = {
           file: mapV1File(existing),
           links: {
@@ -1620,14 +1610,25 @@ function createApp() {
 
     let result;
     try {
-      result = await uploadService.uploadFile({
-        fileName: file.name,
-        mimeType: file.type || normalizeMimeType(file.name),
-        fileSize,
-        buffer: fileBuffer,
+      const storageConfig = uploadService.resolveStorage({
         storageMode,
         storageId: asString(body.storageId || body.storage_config_id),
-        folderPath: normalizeFolderPath(body.folderPath || body.folder || ''),
+      });
+      const actualPolicyError = enforceTokenPolicy(c, { storage: storageConfig.type, folderPath: uploadFolder });
+      if (actualPolicyError) return actualPolicyError;
+
+      const uploadLimit = getUploadLimits()[storageConfig.type];
+      if (uploadLimit && fileSize > uploadLimit.maxBytes) {
+        return apiV1Error('FILE_TOO_LARGE', uploadLimit.message || 'File exceeds selected storage limit.', 413);
+      }
+
+      result = await uploadService.uploadFile({
+        storageConfig,
+        fileName: file.name,
+        mimeType: uploadMime,
+        fileSize,
+        buffer: fileBuffer,
+        folderPath: uploadFolder,
       });
     } catch (error) {
       const payload = toStorageErrorPayload(error, error?.status || 502);
@@ -1800,17 +1801,11 @@ function createApp() {
     });
     if (policyMimeError) return policyMimeError;
 
-    const storageKey = storage || container.config.bootstrapDefaultStorage?.type || 'telegram';
-    const storageLimit = IMPORT_STORAGE_LIMITS[storageKey];
-    if (storageLimit && fetched.bytes.length > storageLimit) {
-      return apiV1Error('FILE_TOO_LARGE', `File exceeds the ${storageKey} storage limit.`, 413);
-    }
-
     const contentSha256 = sha256HexBytes(fetched.bytes);
 
     if (body?.deduplicate !== false) {
       const existing = findDeduplicatedFile(container.db, fileRepo, contentSha256);
-      if (existing) {
+      if (existing && !enforceTokenPolicy(c, { storage: existing.storage_type, folderPath: existing.folder_path })) {
         const dedupPayload = {
           data: {
             file: {
@@ -1838,12 +1833,21 @@ function createApp() {
 
     let result;
     try {
+      const storageConfig = uploadService.resolveStorage({ storageMode: storage });
+      const actualPolicyError = enforceTokenPolicy(c, { storage: storageConfig.type, folderPath: folder });
+      if (actualPolicyError) return actualPolicyError;
+
+      const storageLimit = IMPORT_STORAGE_LIMITS[storageConfig.type];
+      if (storageLimit && fetched.bytes.length > storageLimit) {
+        return apiV1Error('FILE_TOO_LARGE', `File exceeds the ${storageConfig.type} storage limit.`, 413);
+      }
+
       result = await uploadService.uploadFile({
+        storageConfig,
         fileName: fetched.fileName,
         mimeType: fetched.mime,
         fileSize: fetched.bytes.length,
         buffer: fetched.buffer,
-        storageMode: storage,
         folderPath: folder,
       });
     } catch (error) {

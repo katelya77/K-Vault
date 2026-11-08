@@ -5,6 +5,7 @@
  */
 
 const dns = require('node:dns').promises;
+const { isIP } = require('node:net');
 const { isPrivateHost, sniffImageMime, MAX_REDIRECTS } = require('./ssrf-shared');
 
 const BLOCKED_HOSTNAMES = new Set([
@@ -58,7 +59,7 @@ async function assertSafeRemoteUrl(rawUrl) {
 
   const hostname = check.url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
   // Pure literal IPs are already covered by isPrivateHost; resolve names.
-  if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(hostname) && hostname.includes('.')) {
+  if (!isIP(hostname)) {
     try {
       const addresses = await dns.lookup(hostname, { all: true, verbatim: true });
       for (const entry of addresses) {

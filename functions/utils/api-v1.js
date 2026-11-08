@@ -39,6 +39,24 @@ export function apiError(code, message, status = 400, extra = {}, headers = {}) 
   );
 }
 
+export async function readIdempotentResponse(env, key) {
+  if (!key || !env?.img_url) return null;
+  try {
+    const saved = await env.img_url.get(key, { type: 'json' });
+    if (saved?.status && saved?.body) {
+      return apiSuccess(saved.body, saved.status, { 'Idempotency-Replayed': 'true' });
+    }
+  } catch { /* replay lookup failure is non-fatal */ }
+  return null;
+}
+
+export async function saveIdempotentResponse(env, key, body, status) {
+  if (!key || !env?.img_url) return;
+  try {
+    await env.img_url.put(key, JSON.stringify({ body, status }), { expirationTtl: 24 * 3600 });
+  } catch { /* replay snapshot failure is non-fatal */ }
+}
+
 export function decodePathParam(rawValue = '') {
   try {
     return decodeURIComponent(String(rawValue || ''));

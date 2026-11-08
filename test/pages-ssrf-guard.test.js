@@ -11,6 +11,8 @@ describe('Pages ssrf-guard literal-IP protection', function () {
     const blocked = [
       'http://10.1.2.3/x.jpg',
       'http://127.0.0.1/x.jpg',
+      'http://[::ffff:127.0.0.1]/x.jpg',
+      'http://[::ffff:a9fe:a9fe]/x.jpg',
       'http://169.254.169.254/latest/meta-data/',
       'http://172.16.0.9/x.jpg',
       'http://172.31.255.254/x.jpg',
@@ -25,8 +27,10 @@ describe('Pages ssrf-guard literal-IP protection', function () {
   });
 
   it('allows public literal IPs without DNS dependence', async function () {
-    const result = await guard.validateRemoteUrl('http://8.8.8.8/x.jpg');
-    assert.ok(result.ok, '8.8.8.8 is public and must not be blocked');
+    for (const target of ['http://8.8.8.8/x.jpg', 'http://[::ffff:8.8.8.8]/x.jpg']) {
+      const result = await guard.validateRemoteUrl(target);
+      assert.ok(result.ok, `${target} is public and must not be blocked`);
+    }
   });
 
   it('rejects non-http(s) protocols', async function () {

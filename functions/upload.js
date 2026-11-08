@@ -1,6 +1,7 @@
 import { errorHandling, telemetryData } from "./utils/middleware.js";
 import { checkAuthentication, isAuthRequired } from "./utils/auth.js";
 import { checkGuestUpload, incrementGuestCount } from "./utils/guest.js";
+import { normalizeFolderPath } from "./utils/folder-path.js";
 import { createS3Client } from "./utils/s3client.js";
 import { uploadToDiscord } from "./utils/discord.js";
 import { hasHuggingFaceConfig, uploadToHuggingFace } from "./utils/huggingface.js";
@@ -198,21 +199,6 @@ function normalizeFileExtension(fileName) {
     ?.toLowerCase()
     ?.replace(/[^a-z0-9]/g, "");
   return ext || "bin";
-}
-
-function normalizeFolderPath(value) {
-  const raw = String(value || "").replace(/\\/g, "/").trim();
-  const output = [];
-  for (const part of raw.split("/")) {
-    const piece = part.trim();
-    if (!piece || piece === ".") continue;
-    if (piece === "..") {
-      output.pop();
-      continue;
-    }
-    output.push(piece);
-  }
-  return output.join("/");
 }
 
 function joinStoragePath(folderPath, fileName) {

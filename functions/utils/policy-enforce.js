@@ -22,7 +22,7 @@ export function checkUploadPolicy(tokenRecord, { storage, mime, sizeBytes, folde
     }
   }
 
-  if (policies.allowedMimeTypes?.length) {
+  if (mime !== undefined && policies.allowedMimeTypes?.length) {
     const normalized = baseMime(mime);
     if (!normalized || !policies.allowedMimeTypes.includes(normalized)) {
       return {
@@ -44,8 +44,8 @@ export function checkUploadPolicy(tokenRecord, { storage, mime, sizeBytes, folde
   }
 
   if (policies.folderPrefix) {
-    const folder = String(folderPath || '').replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
-    if (!folder.startsWith(policies.folderPrefix)) {
+    const prefix = policies.folderPrefix;
+    if (folderPath !== prefix && !String(folderPath || '').startsWith(`${prefix}/`)) {
       return {
         ok: false,
         status: 403,
