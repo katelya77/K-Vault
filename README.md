@@ -376,7 +376,7 @@ Cloudflare Pages 需要能从外部访问 `CUSTOM_BOT_API_URL`。上例中的 `1
 
 ### R2 存储（大文件支持，可选）
 
-配置 R2 可支持最大 100MB 文件上传：
+在 Cloudflare Pages 绑定原生 R2 存储桶：
 
 1. **创建存储桶**
    - Cloudflare Dashboard → `R2 对象存储` → `创建存储桶`
@@ -389,6 +389,12 @@ Cloudflare Pages 需要能从外部访问 `CUSTOM_BOT_API_URL`。上例中的 `1
 3. **启用 R2**
    - `设置` → `环境变量` → 添加 `USE_R2` = `true`
    - 重新部署
+
+同时绑定 `img_url` 并配置 `BASIC_USER` / `BASIC_PASS` 后，管理员登录上传页并选择 R2。超过 100 MiB 的本地文件自动使用 R2 原生分片，单文件上限为 20 GiB，每个请求上传 16 MiB 或更小的分片。
+
+- 暂停或断网后可直接重试。关闭页面后，在同一浏览器重新选择原文件和目录，继续上传尚未确认的分片。浏览器存储不可用时，断点只保存在当前页面。更换管理员凭据会使旧会话失效。
+- 放弃上传时，在失败或暂停项选择「放弃断点」，R2 会中止尚未完成的上传。对于关闭页面后遗留的分片，保留 R2 桶的默认清理规则，通常会在启动上传七天后回收。自定义规则可能缩短续传窗口。[R2 生命周期规则](https://developers.cloudflare.com/r2/buckets/object-lifecycles/)
+- R2 已完成而 KV 索引暂时写入失败时，重试会补写索引并返回原来的直链。URL 导入、访客、API Token 和 Docker 继续使用各自的上传上限。
 
 > 如果重新部署时报 `binding R2_BUCKET of type r2_bucket contains an invalid jurisdiction`，说明 Cloudflare Pages 在校验 R2 绑定元数据时失败，不是上传代码报错。普通 R2 桶不要设置 `jurisdiction`；只有带数据驻留限制的桶才使用 `eu` 或 `fedramp`。按 [Cloudflare Pages R2 绑定排查](docs/cloudflare-pages-r2.md) 删除并重建 Production/Preview 绑定，或运行 `npm run pages:r2:doctor -- --check` 校验 `wrangler.jsonc`。
 
@@ -647,7 +653,7 @@ K-Vault 会根据 Hugging Face 的预上传响应自动选择普通上传或 LFS
 | Telegram（Cloudflare Pages 网页上传） | 20MB；更大的 Telegram 文件建议通过 Telegram 客户端发送，再由 Webhook 回链 |
 | Telegram（Docker 网页上传） | 50MB（受 Bot API 上传限制影响） |
 | Telegram（自部署 Bot API + Telegram 客户端 + Webhook） | 受 Bot API 与部署环境影响，常见可达 2GB |
-| Cloudflare R2 | 100MB（分片上传） |
+| Cloudflare Pages R2 | 管理员网页上传 20 GiB（超过 100 MiB 使用原生分片） |
 | S3 兼容存储 | 100MB（分片上传） |
 | Discord（无 Boost） | 25MB |
 | Discord（Level 2+） | 50-100MB |

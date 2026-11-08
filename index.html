@@ -2768,6 +2768,10 @@
             </div>
           </div>
 
+          <p v-if="getR2MultipartMaxBytes(storageMode)" class="image-compress-summary">
+            R2 超过 100 MiB 的文件自动分片，单文件上限 {{ formatSize(getR2MultipartMaxBytes(storageMode)) }}。
+            中断后可在同一浏览器重新选择原文件和目录续传。
+          </p>
           <div class="upload-methods">
             <button class="method-btn" @click="triggerUpload">
               <i class="fas fa-folder-open"></i>
@@ -2894,6 +2898,24 @@
                 title="重试"
               >
                 <i class="fas fa-redo"></i>
+              </button>
+              <button
+                v-if="file.multipart && file.status === 'uploading'"
+                class="action-btn"
+                @click="file.multipartController.abort()"
+                title="暂停 R2 分片上传"
+                aria-label="暂停 R2 分片上传"
+              >
+                <i class="fas fa-pause"></i>
+              </button>
+              <button
+                v-if="file.multipart && file.status === 'error'"
+                class="action-btn"
+                @click="discardR2Multipart(file)"
+                title="放弃断点并释放 R2 分片"
+                aria-label="放弃断点并释放 R2 分片"
+              >
+                <i class="fas fa-trash-alt"></i>
               </button>
             </div>
           </div>
@@ -3415,6 +3437,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/vue@2.6.14/dist/vue.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/element-ui@2.15.3/lib/index.js"></script>
+    <script src="/r2-multipart.js"></script>
     <script>
       const LOCAL_PREVIEW_PAGE = "/preview.html";
 
@@ -4188,17 +4211,24 @@
           },
 
           validateUploadItemSize(item) {
-            const limit = this.getUploadLimit(this.getItemStorageMode(item));
+            const mode = this.getItemStorageMode(item);
+            const limit = this.getUploadLimit(mode);
             const maxBytes =
               this.isGuest && this.guestUploadConfig
                 ? Math.min(limit.maxBytes || Infinity, this.guestUploadConfig.maxFileSize)
-                : limit.maxBytes;
+                : this.getR2MultipartMaxBytes(mode) || limit.maxBytes;
             if (maxBytes && item.file.size > maxBytes) {
               throw new Error(
                 `${this.getItemStorageTarget(item)} 单文件上限为 ${this.formatSize(maxBytes)}。` +
                   `较大的浏览器上传请切换到 R2、S3、WebDAV 或 GitHub。`
               );
             }
+          },
+
+          getR2MultipartMaxBytes(mode) {
+            return mode === "r2" && this.isAuthenticated && !this.isGuest
+              ? this.getUploadLimit(mode).multipartMaxBytes || 0
+              : 0;
           },
 
           shouldUseChunkedUpload(item) {
@@ -4694,6 +4724,8 @@
                 linkBaseURL: context.linkBaseURL,
                 usedPublicBaseUrl: context.usedPublicBaseUrl,
                 isChunked: false,
+                multipart: false,
+                multipartController: null,
               };
 
               // 生成预览
@@ -4762,22 +4794,54 @@
 
           // 上传单个文件
           async uploadFile(item) {
+            if (item.status !== "waiting") return;
+            item.status = "processing";
             try {
               await this.prepareUploadItem(item);
               this.validateUploadItemSize(item);
+              const mode = this.getItemStorageMode(item);
+              item.multipart = Boolean(this.getR2MultipartMaxBytes(mode)) &&
+                item.file.size > this.getUploadLimit(mode).maxBytes;
               item.status = "uploading";
               item.progress = 0;
               item.isChunked = this.shouldUseChunkedUpload(item);
               // 根据文件大小决定使用普通上传还是分片上传
-              if (item.isChunked) {
+              if (item.multipart) {
+                item.multipartController = new AbortController();
+                const src = await KVaultR2Multipart.upload(item.file, this.getItemFolderPath(item), {
+                  signal: item.multipartController.signal,
+                  onProgress: (progress) => { item.progress = progress; },
+                });
+                item.status = "success";
+                item.progress = 100;
+                this.handleUploadSuccess(item, src);
+              } else if (item.isChunked) {
                 await this.chunkedUpload(item);
               } else {
                 await this.directUpload(item);
               }
             } catch (err) {
               item.status = "error";
-              item.error = err.message;
-              console.error("Upload error:", err);
+              item.error = item.multipartController?.signal.aborted
+                ? "已暂停，重试可继续上传。"
+                : err.message;
+              if (!item.multipartController?.signal.aborted) console.error("Upload error:", err);
+            } finally {
+              item.multipartController = null;
+            }
+          },
+
+          async discardR2Multipart(item) {
+            if (item.status !== "error") return;
+            item.status = "processing";
+            try {
+              const src = await KVaultR2Multipart.discard(item.file, this.getItemFolderPath(item));
+              if (src) this.handleUploadSuccess(item, src);
+              if (item.preview) URL.revokeObjectURL(item.preview);
+              this.uploadingFiles = this.uploadingFiles.filter(file => file !== item);
+            } catch (error) {
+              item.status = "error";
+              item.error = error.message;
             }
           },
 
@@ -5403,10 +5467,11 @@
           },
 
           saveHistory() {
-            localStorage.setItem(
-              "uploadHistory",
-              JSON.stringify(this.uploadHistory),
-            );
+            try {
+              localStorage.setItem("uploadHistory", JSON.stringify(this.uploadHistory));
+            } catch {
+              // Upload results remain available in the current page when browser storage is unavailable.
+            }
           },
 
           loadHistory() {

@@ -327,7 +327,7 @@ To enable image management, configure KV:
 
 ### R2 Storage (Large File Support, Optional)
 
-Configure R2 to support uploads up to 100MB:
+Bind a native R2 bucket to Cloudflare Pages:
 
 1. **Create a bucket**
    - Cloudflare Dashboard -> `R2 Object Storage` -> `Create bucket`
@@ -340,6 +340,12 @@ Configure R2 to support uploads up to 100MB:
 3. **Enable R2**
    - `Settings` -> `Environment variables` -> add `USE_R2` = `true`
    - Redeploy
+
+With the `img_url` binding and `BASIC_USER` / `BASIC_PASS` configured, sign in as an administrator and choose R2 in the uploader. Local files over 100 MiB use native R2 multipart uploads. K-Vault allows up to 20 GiB per file and sends parts of at most 16 MiB.
+
+- Retry a paused or interrupted upload from the queue. After reloading the page, select the original file and destination folder in the same browser to resume. If browser storage is unavailable, the checkpoint lives only in the current page. Changing the admin credentials invalidates existing sessions.
+- Choose “Discard checkpoint” on a paused or failed item to abort its incomplete R2 upload. Keep the R2 bucket's default rule to reclaim abandoned parts seven days after initiation. A custom lifecycle rule can shorten the resume window. [R2 object lifecycles](https://developers.cloudflare.com/r2/buckets/object-lifecycles/)
+- If R2 completes the object while the KV index is temporarily unavailable, retry to repair the index and get the same link. URL imports, guest uploads, API Token uploads, and Docker use their respective size limits.
 
 > If redeploy fails with `binding R2_BUCKET of type r2_bucket contains an invalid jurisdiction`, Cloudflare Pages is rejecting the R2 binding metadata before K-Vault code runs. Normal R2 buckets should not set `jurisdiction`; only residency-restricted buckets use `eu` or `fedramp`. Follow [Cloudflare Pages R2 binding troubleshooting](docs/cloudflare-pages-r2.md) to rebuild Production/Preview bindings, or run `npm run pages:r2:doctor -- --check` to validate `wrangler.jsonc`.
 
@@ -535,7 +541,7 @@ Allows non-logged-in users to upload files. Site owners can configure whether it
 | :--- | :--- |
 | Telegram (web direct upload) | Small-file direct upload 20MB; current chunked flow limit 100MB |
 | Telegram (self-hosted Bot API + Telegram client + Webhook) | Depends on Bot API and deployment environment, commonly up to 2GB |
-| Cloudflare R2 | 100MB (chunked upload) |
+| Cloudflare Pages R2 | 20 GiB for admin browser uploads (native multipart above 100 MiB) |
 | S3-compatible storage | 100MB (chunked upload) |
 | Discord (non-Boosted) | 25MB |
 | Discord (Level 2+) | 50-100MB |

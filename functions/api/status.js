@@ -5,6 +5,7 @@ import { checkWebDAVConnection, hasWebDAVConfig } from '../utils/webdav.js';
 import { checkGitHubConnection, hasGitHubConfig } from '../utils/github.js';
 import { getGuestConfig } from '../utils/guest.js';
 import { buildTelegramBotApiUrl, getTelegramApiBase } from '../utils/telegram.js';
+import { getR2MultipartMaxBytes } from '../utils/r2-multipart.js';
 
 const MB = 1024 * 1024;
 const DIRECT_UPLOAD_THRESHOLD = 20 * MB;
@@ -57,7 +58,7 @@ export async function onRequestGet(context) {
     github: defaultStatusItem({ layer: 'direct' }),
     auth: { enabled: false, message: 'Disabled' },
     guestUpload: getGuestConfig(env),
-    uploadLimits: getUploadLimits(),
+    uploadLimits: getUploadLimits(env),
     capabilities: [
       storageCapability('telegram', 'Telegram', 'direct'),
       storageCapability('r2', 'R2', 'direct'),
@@ -316,7 +317,7 @@ export async function onRequestGet(context) {
   });
 }
 
-function getUploadLimits() {
+function getUploadLimits(env) {
   return {
     telegram: {
       maxBytes: DIRECT_UPLOAD_THRESHOLD,
@@ -328,6 +329,7 @@ function getUploadLimits() {
       maxBytes: CHUNK_UPLOAD_LIMIT,
       directThreshold: DIRECT_UPLOAD_THRESHOLD,
       supportsChunkUpload: true,
+      multipartMaxBytes: getR2MultipartMaxBytes(env),
     },
     s3: {
       maxBytes: CHUNK_UPLOAD_LIMIT,
