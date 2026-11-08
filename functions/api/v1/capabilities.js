@@ -13,7 +13,11 @@ const MAX_UPLOAD_SIZE = 100 * 1024 * 1024; // 100MB (Pages hard limit)
 export function detectConfiguredStorages(env) {
   const storages = [];
 
-  if ((env.TG_BOT_TOKEN || '').trim() && ((env.TG_CHAT_ID || '').trim() || (env.TG_Chat_ID || '').trim())) {
+  // Pages uploads use the historical mixed-case bindings, while Docker
+  // normalizes them to uppercase. Accept both when advertising readiness.
+  const telegramBotToken = String(env.TG_BOT_TOKEN || env.TG_Bot_Token || '').trim();
+  const telegramChatId = String(env.TG_CHAT_ID || env.TG_Chat_ID || '').trim();
+  if (telegramBotToken && telegramChatId) {
     storages.push('telegram');
   }
   if (env.R2_BUCKET) {
