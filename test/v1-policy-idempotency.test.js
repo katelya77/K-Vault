@@ -55,12 +55,13 @@ describe('API v1 token policies, idempotency and dedup (Docker)', function () {
     return payload.token;
   }
 
-  function uploadRequest(token, { content = 'hello', storage = 'telegram', storageId = '', folderPath = '', idempotencyKey = '' } = {}) {
+  function uploadRequest(token, { content = 'hello', storage = 'telegram', storageId = '', folderPath = '', idempotencyKey = '', password = '' } = {}) {
     const form = new FormData();
     form.append('file', new Blob([content], { type: 'image/png' }), 'hello.png');
     if (storage) form.append('storage', storage);
     if (storageId) form.append('storageId', storageId);
     if (folderPath) form.append('folderPath', folderPath);
+    if (password) form.append('password', password);
     const headers = { Authorization: `Bearer ${token}` };
     if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
     return app.fetch(new Request('http://localhost/api/v1/upload', {
@@ -255,6 +256,21 @@ describe('API v1 token policies, idempotency and dedup (Docker)', function () {
     const payload = await response.json();
     assert.strictEqual(payload.deduplicated, true);
     assert.strictEqual(payload.file?.id, 'dedup-original.png');
+
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (url) => {
+      assert.match(String(url), /\/sendDocument$/);
+      return Response.json({ ok: true, result: { message_id: 42, document: { file_id: 'dedup-protected' } } });
+    };
+    try {
+      const response = await uploadRequest(token, { content, password: 'fixture-share' });
+      assert.strictEqual(response.status, 200);
+      const protectedUpload = await response.json();
+      assert.notStrictEqual(protectedUpload.file.id, 'dedup-original.png');
+      assert.strictEqual((await app.request(protectedUpload.links.download)).status, 401);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
     assert.ok(payload.links?.download);
   });
 });

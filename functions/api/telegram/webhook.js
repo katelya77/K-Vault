@@ -64,8 +64,9 @@ export async function onRequestPost(context) {
       )
     : `${media.fileId}.${media.fileExtension}`;
 
-  if (env.img_url && shouldWriteTelegramMetadata(env)) {
-    await env.img_url.put(`${media.fileId}.${media.fileExtension}`, '', {
+  const kvKey = `${media.fileId}.${media.fileExtension}`;
+  if (env.img_url && shouldWriteTelegramMetadata(env) && !(await env.img_url.getWithMetadata(kvKey))?.metadata) {
+    await env.img_url.put(kvKey, '', {
       metadata: {
         TimeStamp: Date.now(),
         ListType: 'None',

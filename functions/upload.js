@@ -256,8 +256,9 @@ async function uploadToTelegramStorage(
     env
   );
 
-  if (env.img_url && shouldWriteTelegramMetadata(env)) {
-    await env.img_url.put(`${fileId}.${fileExtension}`, "", {
+  const kvKey = `${fileId}.${fileExtension}`;
+  if (env.img_url && shouldWriteTelegramMetadata(env) && !(await env.img_url.getWithMetadata(kvKey))?.metadata) {
+    await env.img_url.put(kvKey, "", {
       metadata: appendCommonMetadata(
         {
           TimeStamp: Date.now(),

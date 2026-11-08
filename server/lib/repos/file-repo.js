@@ -1,4 +1,5 @@
 const { all, get, run } = require('../../db');
+const { publicShareMetadata } = require('../utils/share-password.cjs');
 
 function parseExtra(extraJson) {
   try {
@@ -81,7 +82,7 @@ function toMetadata(row) {
 function mapRow(row) {
   return {
     name: row.id,
-    metadata: toMetadata(row),
+    metadata: publicShareMetadata(toMetadata(row)),
   };
 }
 
