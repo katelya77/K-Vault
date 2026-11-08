@@ -68,9 +68,17 @@ export async function onRequest(context) {
   }
 
   try {
-    let fileId = params.id;
-    if (!fileId) {
+    const rawFileId = String(params.id || '');
+    if (!rawFileId) {
       return errorResponse('Missing file id', 400);
+    }
+    // Pages may pass percent-encoded route parameters through unchanged.
+    // Upload API links encode "r2:" as "r2%3A"; normalize once before KV lookup.
+    let fileId;
+    try {
+      fileId = decodeURIComponent(rawFileId);
+    } catch {
+      return errorResponse('Invalid file id', 400);
     }
 
     const signedTelegramMeta = await parseSignedTelegramFileId(fileId, env);
