@@ -257,7 +257,7 @@ This project supports switching the Telegram API base URL to a self-hosted Bot A
 
 | Variable | Description | Example |
 | :--- | :--- | :--- |
-| `CUSTOM_BOT_API_URL` | Self-hosted Bot API URL (defaults to `https://api.telegram.org` if not set) | `http://127.0.0.1:8081` |
+| `CUSTOM_BOT_API_URL` | Self-hosted Bot API URL reachable by K-Vault (uses the official API if unset) | `https://bot-api.example.com` |
 | `PUBLIC_BASE_URL` | Public domain used for Webhook backlink replies (recommended) | `https://img.example.com` |
 | `TG_WEBHOOK_SECRET` | Webhook secret, verified by header `X-Telegram-Bot-Api-Secret-Token` | `your-secret` |
 | `TELEGRAM_LINK_MODE` | Telegram link mode; set `signed` to enable signed direct links | `signed` |
@@ -281,13 +281,22 @@ curl -X POST "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook" \
   -d "{\"url\":\"https://img.example.com/api/telegram/webhook\",\"secret_token\":\"<YOUR_SECRET>\",\"allowed_updates\":[\"message\",\"channel_post\"]}"
 ```
 
-**`setWebhook` example (self-hosted Bot API):**
+**`setWebhook` example (run on the self-hosted Bot API machine):**
 
 ```bash
 curl -X POST "http://127.0.0.1:8081/bot<YOUR_BOT_TOKEN>/setWebhook" \
   -H "Content-Type: application/json" \
   -d "{\"url\":\"https://img.example.com/api/telegram/webhook\",\"secret_token\":\"<YOUR_SECRET>\",\"allowed_updates\":[\"message\",\"channel_post\"]}"
 ```
+
+**Verify and troubleshoot the webhook**
+
+1. Open `https://img.example.com/api/telegram/webhook`. A GET response with `ok: true` confirms the K-Vault route is reachable. Verify POST delivery separately.
+2. Call `getWebhookInfo` on the same Bot API used for registration. Check the full `url`, the `pending_update_count`, and the latest `last_error_message`. If the URL points to an old domain, call `setWebhook` again with the current endpoint and matching `secret_token`. [Telegram Bot API](https://core.telegram.org/bots/api#getwebhookinfo)
+3. Send a fresh file and check the POST status in Pages Functions. A 401 indicates a mismatch between `secret_token` and `TG_WEBHOOK_SECRET` (or `TELEGRAM_WEBHOOK_SECRET`). Subscribe to `channel_post` for channels and `message` for groups.
+4. If the POST returns `directLink` without a chat reply, inspect `reply.ok` and `reply.reason`. A reason of `disabled` means `TG_UPLOAD_NOTIFY` or `TELEGRAM_UPLOAD_NOTIFY` is off. If Telegram rejects the reply, check the bot's posting permissions. If group updates never arrive, check the bot's privacy mode.
+
+Use a Bot API URL that Cloudflare Pages can reach. The `127.0.0.1` example above is for registration from the Bot API machine.
 
 > **About 2GB files:**  
 > With a self-hosted Bot API (`CUSTOM_BOT_API_URL`), when files are sent directly from a Telegram client to a group/channel and returned via Webhook links, you can use the Bot API large-file capability (commonly up to 2GB).  

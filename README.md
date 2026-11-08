@@ -273,7 +273,7 @@ curl -i -X POST "http://localhost:8080/api/auth/login" \
 
 | 变量名 | 说明 | 示例 |
 | :--- | :--- | :--- |
-| `CUSTOM_BOT_API_URL` | 自部署 Bot API 地址（不填则默认 `https://api.telegram.org`） | `http://127.0.0.1:8081` |
+| `CUSTOM_BOT_API_URL` | K-Vault 运行环境能访问的自部署 Bot API 地址（不填则使用官方 API） | `https://bot-api.example.com` |
 | `PUBLIC_BASE_URL` | Webhook 回链时使用的公网域名（建议填写） | `https://img.example.com` |
 | `TG_WEBHOOK_SECRET` | Webhook 密钥，校验头 `X-Telegram-Bot-Api-Secret-Token` | `your-secret` |
 | `TELEGRAM_LINK_MODE` | Telegram 链接模式，设为 `signed` 启用签名直链 | `signed` |
@@ -297,7 +297,7 @@ curl -X POST "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook" \
   -d "{\"url\":\"https://img.example.com/api/telegram/webhook\",\"secret_token\":\"<YOUR_SECRET>\",\"allowed_updates\":[\"message\",\"channel_post\"]}"
 ```
 
-**`setWebhook` 示例（自部署 Bot API）：**
+**`setWebhook` 示例（在自部署 Bot API 所在机器执行）：**
 
 ```bash
 curl -X POST "http://127.0.0.1:8081/bot<YOUR_BOT_TOKEN>/setWebhook" \
@@ -307,22 +307,12 @@ curl -X POST "http://127.0.0.1:8081/bot<YOUR_BOT_TOKEN>/setWebhook" \
 
 **Webhook 验证与排查：**
 
-1. `setWebhook` 返回 `{"ok":true,"result":true}` 只代表 Telegram 接受了 webhook 地址，不代表 Bot 已经成功回链。
-2. 调用 `getWebhookInfo` 查看 Telegram 是否正在向你的 Pages 域名投递更新：
+1. 先访问 `https://img.example.com/api/telegram/webhook`。GET 返回 `ok: true` 表示 K-Vault 路由可达，随后还需确认 Telegram 的 POST 投递。
+2. 在注册时使用的同一 Bot API 上调用 `getWebhookInfo`。核对 `url` 是否为当前部署的完整 webhook 地址，并检查 `pending_update_count` 和最近的 `last_error_message`。如果仍指向旧域名，用正确的 URL 和 `secret_token` 重新调用 `setWebhook`。[Telegram Bot API](https://core.telegram.org/bots/api#getwebhookinfo)
+3. 发一条新文件消息，检查 Pages Functions 的 POST 状态。401 表示 `secret_token` 与 Pages 的 `TG_WEBHOOK_SECRET`（或 `TELEGRAM_WEBHOOK_SECRET`）不一致。频道需要订阅 `channel_post`，群聊需要订阅 `message`。
+4. 已生成 `directLink` 但没有回复时，检查 POST 响应的 `reply.ok` 和 `reply.reason`。`disabled` 表示回链通知被 `TG_UPLOAD_NOTIFY` 或 `TELEGRAM_UPLOAD_NOTIFY` 关闭。Telegram 拒绝发送时，检查 Bot 的频道或群发言权限。群里收不到文件消息时，检查 BotFather 的隐私模式。
 
-```bash
-curl "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getWebhookInfo"
-```
-
-3. 在群/频道发送图片或文件后，查看 Cloudflare Pages Functions 日志。K-Vault 的 webhook POST 响应会包含：
-   - `directLink`：生成的 `/file/...` 链接
-   - `reply.ok`：是否成功调用 `sendMessage`
-   - `reply.reason`：失败时的 Telegram API 描述或跳过原因
-4. 如果 `reply.ok=false`：
-   - 确认 Bot 在频道中是管理员，或在群里有发言权限。
-   - 确认 `TG_UPLOAD_NOTIFY` / `TELEGRAM_UPLOAD_NOTIFY` 没有被设置为 `false`。
-   - 如果设置了 `TG_WEBHOOK_SECRET`，`setWebhook` 的 `secret_token` 必须完全一致。
-   - 群聊场景如果 Bot 收不到普通消息，关闭 BotFather 中的隐私模式，或让用户显式 @Bot。
+Cloudflare Pages 需要能从外部访问 `CUSTOM_BOT_API_URL`。上例中的 `127.0.0.1` 用于在 Bot API 所在机器注册 webhook，Pages 环境变量应填写可访问的 API 地址。
 
 > **关于 2G 文件：**  
 > 使用自部署 Bot API（`CUSTOM_BOT_API_URL`）并由 Telegram 客户端直接发到群/频道，再由 Webhook 回链，可利用 Bot API 大文件能力（常见可到 2GB）。  
