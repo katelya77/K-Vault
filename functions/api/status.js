@@ -30,15 +30,19 @@ function storageCapability(type, label, layer = 'direct') {
 }
 
 export async function onRequestGet(context) {
-  const { env } = context;
+  const { env, request } = context;
   let publicBaseUrl = '';
   try {
     const url = new URL(String(env.PUBLIC_BASE_URL || '').trim());
     if (['http:', 'https:'].includes(url.protocol) && !url.username && !url.password) {
-      publicBaseUrl = url.origin;
+      publicBaseUrl = `${url.origin}${url.pathname.replace(/\/+$/, '')}`;
     }
   } catch (_) {
     // Leave the option unavailable when PUBLIC_BASE_URL is missing or invalid.
+  }
+
+  if (request && new URL(request.url).searchParams.get('view') === 'public-links') {
+    return Response.json({ publicBaseUrl }, { headers: { 'Cache-Control': 'no-store' } });
   }
 
   const status = {

@@ -32,8 +32,8 @@
 
 ## 功能特性
 
-- **无限存储** - 不限数量的图片和文件上传
-- **完全免费** - 托管于 Cloudflare，免费额度内零成本
+- **多后端托管** - 实际容量与文件数量受选择的后端、配额、请求限制和成本约束
+- **免费额度可用** - 可在 Cloudflare 免费额度内运行，超出配额及部分存储服务可能计费
 - **免费域名** - 使用 `*.pages.dev` 二级域名，也支持自定义域名
 - **多存储后端** - 支持 Telegram、Cloudflare R2、S3 兼容存储、Discord、HuggingFace、WebDAV、GitHub
 - **Telegram Webhook 回链** - 机器人在频道/群接收文件后自动回复直链
@@ -165,16 +165,17 @@ docker run -d \
 
 首次启动时，如果没有提供 `CONFIG_ENCRYPTION_KEY` 和 `SESSION_SECRET`，容器会自动生成并保存到数据卷的 `/app/data/runtime.env`。删除容器不会丢失这些密钥；删除数据卷才会丢失。
 
-公网部署时建议显式设置后台账号：
+**生产提示：** 上面的无凭据命令仅用于本机隔离测试；不要在未配置管理员认证、上传限制和网络访问控制前将 8080 端口开放到公网。以下示例先生成随机密码，通过环境变量传入：
 
 ```bash
+export BASIC_PASS="$(openssl rand -base64 32)"
 docker run -d \
   --name kvault \
   --restart unless-stopped \
   -p 8080:8080 \
   -v kvault_data:/app/data \
   -e BASIC_USER=admin \
-  -e BASIC_PASS='换成强密码' \
+  -e BASIC_PASS \
   ghcr.io/katelya77/k-vault:latest
 ```
 
@@ -190,6 +191,7 @@ docker compose up -d
 
 ```bash
 cp .env.example .env
+# 编辑 .env，设置强随机 BASIC_PASS 后再暴露到公网。
 ```
 
 编辑 `.env` 后重启：
@@ -212,7 +214,9 @@ docker compose up -d
 
 Docker 下也可以不预先写存储环境变量，启动后到管理后台新增/测试/切换存储配置。WebDAV 页面、API Token、API v1 上传、短链和文件直链都走同一个 `8080` 入口。
 
-完整 Docker 说明请查看 [README-DOCKER.md](README-DOCKER.md)。
+完整 Docker 说明请查看 [README-DOCKER.md](README-DOCKER.md)。公开部署与凭据处理请查看 [安全部署指南](docs/secure-public-deployment.md)。
+
+本地 Pages 开发执行 `npm start` 时会创建被 Git 忽略的 `.dev.vars`，生成唯一管理员凭据；不要提交此文件或将开发环境密码复制到生产配置。
 
 ### WebDAV 回归验证（Cloudflare Pages / Docker 通用）
 
@@ -222,7 +226,7 @@ Docker 下也可以不预先写存储环境变量，启动后到管理后台新�
 
 ```bash
 BASE_URL=https://你的域名 \
-BASIC_USER=admin BASIC_PASS=your_password \
+BASIC_USER=admin BASIC_PASS="$BASIC_PASS" \
 SMOKE_STORAGE_TYPE=webdav \
 SMOKE_STORAGE_CONFIG_JSON='{"baseUrl":"https://dav.example.com","username":"u","password":"p","rootPath":"uploads"}' \
 node scripts/storage-regression.js
@@ -269,8 +273,8 @@ curl -i -X POST "http://localhost:8080/api/auth/login" \
 
 | 变量名 | 说明 | 示例 |
 | :--- | :--- | :--- |
-| `CUSTOM_BOT_API_URL` | 自部署 Bot API 地址（不填则默认 `https://api.telegram.org`） | `http://127.0.0.1:8081` |
-| `PUBLIC_BASE_URL` | Webhook 回链域名；上传页勾选“使用 PUBLIC_BASE_URL 公共域名返回结果”后也用于该次上传的文件链接。图片浏览页选择文件后可单独复制公共访问链接（仅当它与当前域名不同时可用） | `https://img.example.com` |
+| `CUSTOM_BOT_API_URL` | K-Vault 运行环境能访问的自部署 Bot API 地址（不填则使用官方 API） | `https://bot-api.example.com` |
+| `PUBLIC_BASE_URL` | Webhook 回链的公共地址。上传页可按次选择用它生成分享链接，图库也可单独复制公共链接。支持部署在反向代理的子路径下 | `https://img.example.com` |
 | `TG_WEBHOOK_SECRET` | Webhook 密钥，校验头 `X-Telegram-Bot-Api-Secret-Token` | `your-secret` |
 | `TELEGRAM_LINK_MODE` | Telegram 链接模式，设为 `signed` 启用签名直链 | `signed` |
 | `MINIMIZE_KV_WRITES` | 设为 `true` 时启用低 KV 写入策略（也会启用签名直链） | `true` |
@@ -293,7 +297,7 @@ curl -X POST "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook" \
   -d "{\"url\":\"https://img.example.com/api/telegram/webhook\",\"secret_token\":\"<YOUR_SECRET>\",\"allowed_updates\":[\"message\",\"channel_post\"]}"
 ```
 
-**`setWebhook` 示例（自部署 Bot API）：**
+**`setWebhook` 示例（在自部署 Bot API 所在机器执行）：**
 
 ```bash
 curl -X POST "http://127.0.0.1:8081/bot<YOUR_BOT_TOKEN>/setWebhook" \
@@ -303,22 +307,12 @@ curl -X POST "http://127.0.0.1:8081/bot<YOUR_BOT_TOKEN>/setWebhook" \
 
 **Webhook 验证与排查：**
 
-1. `setWebhook` 返回 `{"ok":true,"result":true}` 只代表 Telegram 接受了 webhook 地址，不代表 Bot 已经成功回链。
-2. 调用 `getWebhookInfo` 查看 Telegram 是否正在向你的 Pages 域名投递更新：
+1. 先访问 `https://img.example.com/api/telegram/webhook`。GET 返回 `ok: true` 表示 K-Vault 路由可达，随后还需确认 Telegram 的 POST 投递。
+2. 在注册时使用的同一 Bot API 上调用 `getWebhookInfo`。核对 `url` 是否为当前部署的完整 webhook 地址，并检查 `pending_update_count` 和最近的 `last_error_message`。如果仍指向旧域名，用正确的 URL 和 `secret_token` 重新调用 `setWebhook`。[Telegram Bot API](https://core.telegram.org/bots/api#getwebhookinfo)
+3. 发一条新文件消息，检查 Pages Functions 的 POST 状态。401 表示 `secret_token` 与 Pages 的 `TG_WEBHOOK_SECRET`（或 `TELEGRAM_WEBHOOK_SECRET`）不一致。频道需要订阅 `channel_post`，群聊需要订阅 `message`。
+4. 已生成 `directLink` 但没有回复时，检查 POST 响应的 `reply.ok` 和 `reply.reason`。`disabled` 表示回链通知被 `TG_UPLOAD_NOTIFY` 或 `TELEGRAM_UPLOAD_NOTIFY` 关闭。Telegram 拒绝发送时，检查 Bot 的频道或群发言权限。群里收不到文件消息时，检查 BotFather 的隐私模式。
 
-```bash
-curl "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getWebhookInfo"
-```
-
-3. 在群/频道发送图片或文件后，查看 Cloudflare Pages Functions 日志。K-Vault 的 webhook POST 响应会包含：
-   - `directLink`：生成的 `/file/...` 链接
-   - `reply.ok`：是否成功调用 `sendMessage`
-   - `reply.reason`：失败时的 Telegram API 描述或跳过原因
-4. 如果 `reply.ok=false`：
-   - 确认 Bot 在频道中是管理员，或在群里有发言权限。
-   - 确认 `TG_UPLOAD_NOTIFY` / `TELEGRAM_UPLOAD_NOTIFY` 没有被设置为 `false`。
-   - 如果设置了 `TG_WEBHOOK_SECRET`，`setWebhook` 的 `secret_token` 必须完全一致。
-   - 群聊场景如果 Bot 收不到普通消息，关闭 BotFather 中的隐私模式，或让用户显式 @Bot。
+Cloudflare Pages 需要能从外部访问 `CUSTOM_BOT_API_URL`。上例中的 `127.0.0.1` 用于在 Bot API 所在机器注册 webhook，Pages 环境变量应填写可访问的 API 地址。
 
 > **关于 2G 文件：**  
 > 使用自部署 Bot API（`CUSTOM_BOT_API_URL`）并由 Telegram 客户端直接发到群/频道，再由 Webhook 回链，可利用 Bot API 大文件能力（常见可到 2GB）。  
@@ -491,10 +485,7 @@ curl "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getWebhookInfo"
 4. 在 Cloudflare Pages 添加 `HF_TOKEN` 和 `HF_REPO` 环境变量
 5. 重新部署
 
-**限制：**
-- 普通上传（base64）：约 35MB/文件
-- LFS 上传：最大 50GB/文件
-- 免费用户仓库总大小：约 50GB
+K-Vault 会根据 Hugging Face 的预上传响应自动选择普通上传或 LFS，无需额外配置。Cloudflare Pages 版的上传入口在转发前会限制单个文件为 35 MiB。超过此大小的文件请使用 R2、S3 或 WebDAV。
 
 ### WebDAV 存储（可选）
 
@@ -660,9 +651,9 @@ curl "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getWebhookInfo"
 | S3 兼容存储 | 100MB（分片上传） |
 | Discord（无 Boost） | 25MB |
 | Discord（Level 2+） | 50-100MB |
-| HuggingFace | 35MB（普通）/ 50GB（LFS） |
+| HuggingFace（Cloudflare Pages） | 35 MiB |
 
-> 说明：`/api/upload-from-url` 当前仍按 20MB 限制处理 Telegram 上传。
+> Cloudflare Pages 的 `/api/upload-from-url` 在 Telegram 模式下默认处理 20 MiB 及以内的文件。绑定了 `R2_BUCKET` 时，超过 20 MiB 的文件自动存入 R2。该接口的文件大小上限为 100 MiB。
 
 ---
 

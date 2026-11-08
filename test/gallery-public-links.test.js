@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-function loadGalleryPage(status = {}) {
+function loadGalleryPage(status = {}, fetchCalls = []) {
   const html = fs.readFileSync(path.join(__dirname, '..', 'gallery.html'), 'utf8');
   const script = html.match(/<script>\s*(const LOCAL_PREVIEW_PAGE[\s\S]*?)<\/script>/);
   assert.ok(script, 'gallery page script should exist');
@@ -11,7 +11,10 @@ function loadGalleryPage(status = {}) {
   vm.runInNewContext(script[1], {
     URL,
     document: { location: { origin: 'https://site-a.example' } },
-    fetch: async () => ({ ok: true, json: async () => status }),
+    fetch: async (url) => {
+      fetchCalls.push(url);
+      return { ok: true, json: async () => status };
+    },
     Vue: function Vue(config) { options = config; },
   });
   const page = Object.assign({}, options.data, options.methods);
@@ -24,7 +27,8 @@ function loadGalleryPage(status = {}) {
 
 describe('Gallery public access links', function () {
   it('enables the public copy button only for a different configured domain', async function () {
-    const { html, page } = loadGalleryPage({ publicBaseUrl: 'https://images-b.example' });
+    const calls = [];
+    const { html, page } = loadGalleryPage({ publicBaseUrl: 'https://images-b.example' }, calls);
     assert.ok(html.includes('复制公共访问链接'));
     assert.ok(html.includes(':disabled="!publicLinkAvailable"'));
     assert.equal(page.publicLinkAvailable, false);
@@ -32,8 +36,11 @@ describe('Gallery public access links', function () {
     assert.equal(page.publicLinkAvailable, true);
     page.publicBaseUrl = 'https://site-a.example';
     assert.equal(page.publicLinkAvailable, false);
-    page.publicBaseUrl = 'http://site-a.example';
-    assert.equal(page.publicLinkAvailable, false);
+    assert.deepEqual(calls, ['/api/status?view=public-links']);
+    page.publicBaseUrl = 'https://site-a.example:8443';
+    assert.equal(page.publicLinkAvailable, true);
+    page.publicBaseUrl = 'https://site-a.example/cache';
+    assert.equal(page.publicLinkAvailable, true);
     page.publicBaseUrl = '';
     assert.equal(page.publicLinkAvailable, false);
   });
@@ -57,6 +64,20 @@ describe('Gallery public access links', function () {
 
     page.batchCopy();
     assert.equal(copied, '![First](https://site-a.example/file/first.jpg)\n![third.jpg](https://site-a.example/file/third.jpg)');
+  });
+
+  it('reads only public link configuration without probing Pages storage', async function () {
+    const { onRequestGet } = await import('../functions/api/status.js');
+    const response = await onRequestGet({
+      request: new Request('https://site-a.example/api/status?view=public-links'),
+      env: {
+        PUBLIC_BASE_URL: 'https://images-b.example/cache/',
+        get R2_BUCKET() { throw new Error('The public link response must skip storage probes'); },
+      },
+    });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('Cache-Control'), 'no-store');
+    assert.deepEqual(await response.json(), { publicBaseUrl: 'https://images-b.example/cache' });
   });
 
   it('does not copy public links when no different domain is configured', function () {

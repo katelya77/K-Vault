@@ -55,10 +55,11 @@ describe('API v1 token policies, idempotency and dedup (Docker)', function () {
     return payload.token;
   }
 
-  function uploadRequest(token, { content = 'hello', storage = 'telegram', folderPath = '', idempotencyKey = '' } = {}) {
+  function uploadRequest(token, { content = 'hello', storage = 'telegram', storageId = '', folderPath = '', idempotencyKey = '' } = {}) {
     const form = new FormData();
     form.append('file', new Blob([content], { type: 'image/png' }), 'hello.png');
     if (storage) form.append('storage', storage);
+    if (storageId) form.append('storageId', storageId);
     if (folderPath) form.append('folderPath', folderPath);
     const headers = { Authorization: `Bearer ${token}` };
     if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
@@ -76,6 +77,71 @@ describe('API v1 token policies, idempotency and dedup (Docker)', function () {
     assert.strictEqual(response.status, 403);
     assert.strictEqual(payload.error?.code, 'POLICY_DENIED');
     assert.deepStrictEqual(payload.error?.allowedStorages, ['r2']);
+  });
+
+  it('enforces allowedStorages on the resolved backend, including default and ID selection', async function () {
+    const db = initDatabase(process.env.DB_PATH);
+    const storageRepo = new StorageConfigRepository(db, loadConfig(process.env));
+    const telegram = storageRepo.create({
+      name: 'Telegram Default', type: 'telegram',
+      config: { botToken: 'test-token', chatId: 'test-chat' },
+      isDefault: true,
+    });
+    const token = await createToken({ allowedStorages: ['r2'] });
+    const originalFetch = globalThis.fetch;
+    let fetchCalls = 0;
+    globalThis.fetch = async () => {
+      fetchCalls += 1;
+      throw new Error('Policy denial must happen before storage access');
+    };
+    try {
+      for (const options of [
+        { storage: '' },
+        { storage: 'r2' },
+        { storage: 'r2', storageId: telegram.id },
+      ]) {
+        const response = await uploadRequest(token, options);
+        assert.strictEqual(response.status, 403, JSON.stringify(options));
+        assert.strictEqual((await response.json()).error.code, 'POLICY_DENIED');
+      }
+      assert.strictEqual(fetchCalls, 0);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('blocks imports that would fall back to a disallowed backend', async function () {
+    const db = initDatabase(process.env.DB_PATH);
+    const storageRepo = new StorageConfigRepository(db, loadConfig(process.env));
+    storageRepo.create({
+      name: 'Telegram Default', type: 'telegram',
+      config: { botToken: 'test-token', chatId: 'test-chat' },
+      isDefault: true,
+    });
+    const token = await createToken({ allowedStorages: ['r2'] });
+    const originalFetch = globalThis.fetch;
+    const source = 'https://8.8.8.8/image.png';
+    let backendCalls = 0;
+    globalThis.fetch = async (url) => {
+      if (String(url) !== source) {
+        backendCalls += 1;
+        throw new Error('Policy denial must happen before storage access');
+      }
+      const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+      return new Response(bytes, { headers: { 'Content-Type': 'image/png' } });
+    };
+    try {
+      const response = await app.fetch(new Request('http://localhost/api/v1/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ url: source, storage: 'r2' }),
+      }));
+      assert.strictEqual(response.status, 403);
+      assert.strictEqual((await response.json()).error.code, 'POLICY_DENIED');
+      assert.strictEqual(backendCalls, 0);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   it('blocks uploads outside the folderPrefix policy', async function () {

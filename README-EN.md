@@ -175,16 +175,17 @@ Open:
 
 On first start, if `CONFIG_ENCRYPTION_KEY` and `SESSION_SECRET` are not provided, the container generates persistent values in `/app/data/runtime.env`. Recreating the container keeps them as long as the Docker volume is kept.
 
-For public deployments, set admin credentials explicitly:
+**Production warning:** The credential-free command above is for isolated local testing only. Do not expose port 8080 to the Internet without admin authentication, upload limits, and network protection. Generate a unique admin password first:
 
 ```bash
+export BASIC_PASS="$(openssl rand -base64 32)"
 docker run -d \
   --name kvault \
   --restart unless-stopped \
   -p 8080:8080 \
   -v kvault_data:/app/data \
   -e BASIC_USER=admin \
-  -e BASIC_PASS='replace-with-a-strong-password' \
+  -e BASIC_PASS \
   ghcr.io/katelya77/k-vault:latest
 ```
 
@@ -200,6 +201,7 @@ The Compose file pulls `ghcr.io/katelya77/k-vault:latest` by default. `.env` is 
 
 ```bash
 cp .env.example .env
+# Set a strong unique BASIC_PASS in .env before exposing the service.
 docker compose up -d
 ```
 
@@ -217,7 +219,9 @@ Common Docker variables:
 
 You can also start Docker first and add/test/switch storage profiles later in the admin console. The WebDAV page, API Tokens, API v1 uploads, direct links, and short links all use the same `8080` entrypoint.
 
-For full Docker guide, see [README-DOCKER.md](README-DOCKER.md).
+For full Docker guide, see [README-DOCKER.md](README-DOCKER.md). Read the [public deployment security guide](docs/secure-public-deployment.md) before exposing your instance.
+
+For local Pages development, `npm start` creates gitignored `.dev.vars` with unique administrator credentials. Do not commit it or reuse local credentials in production.
 
 ### WebDAV Regression Validation (Works for Pages and Docker)
 
@@ -227,7 +231,7 @@ Example:
 
 ```bash
 BASE_URL=https://your-domain \
-BASIC_USER=admin BASIC_PASS=your_password \
+BASIC_USER=admin BASIC_PASS="$BASIC_PASS" \
 SMOKE_STORAGE_TYPE=webdav \
 SMOKE_STORAGE_CONFIG_JSON='{"baseUrl":"https://dav.example.com","username":"u","password":"p","rootPath":"uploads"}' \
 node scripts/storage-regression.js
@@ -253,8 +257,8 @@ This project supports switching the Telegram API base URL to a self-hosted Bot A
 
 | Variable | Description | Example |
 | :--- | :--- | :--- |
-| `CUSTOM_BOT_API_URL` | Self-hosted Bot API URL (defaults to `https://api.telegram.org` if not set) | `http://127.0.0.1:8081` |
-| `PUBLIC_BASE_URL` | Public domain for Webhook replies and file links when selected for an upload. The gallery can separately copy public access links for selected files when this domain differs from the current site | `https://img.example.com` |
+| `CUSTOM_BOT_API_URL` | Self-hosted Bot API URL reachable by K-Vault (uses the official API if unset) | `https://bot-api.example.com` |
+| `PUBLIC_BASE_URL` | Public base URL for webhook replies and optional sharing links in the uploader and gallery. A reverse-proxy path prefix is supported | `https://img.example.com` |
 | `TG_WEBHOOK_SECRET` | Webhook secret, verified by header `X-Telegram-Bot-Api-Secret-Token` | `your-secret` |
 | `TELEGRAM_LINK_MODE` | Telegram link mode; set `signed` to enable signed direct links | `signed` |
 | `MINIMIZE_KV_WRITES` | Set `true` to enable low-KV-write mode (also enables signed direct links) | `true` |
@@ -277,13 +281,22 @@ curl -X POST "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook" \
   -d "{\"url\":\"https://img.example.com/api/telegram/webhook\",\"secret_token\":\"<YOUR_SECRET>\",\"allowed_updates\":[\"message\",\"channel_post\"]}"
 ```
 
-**`setWebhook` example (self-hosted Bot API):**
+**`setWebhook` example (run on the self-hosted Bot API machine):**
 
 ```bash
 curl -X POST "http://127.0.0.1:8081/bot<YOUR_BOT_TOKEN>/setWebhook" \
   -H "Content-Type: application/json" \
   -d "{\"url\":\"https://img.example.com/api/telegram/webhook\",\"secret_token\":\"<YOUR_SECRET>\",\"allowed_updates\":[\"message\",\"channel_post\"]}"
 ```
+
+**Verify and troubleshoot the webhook**
+
+1. Open `https://img.example.com/api/telegram/webhook`. A GET response with `ok: true` confirms the K-Vault route is reachable. Verify POST delivery separately.
+2. Call `getWebhookInfo` on the same Bot API used for registration. Check the full `url`, the `pending_update_count`, and the latest `last_error_message`. If the URL points to an old domain, call `setWebhook` again with the current endpoint and matching `secret_token`. [Telegram Bot API](https://core.telegram.org/bots/api#getwebhookinfo)
+3. Send a fresh file and check the POST status in Pages Functions. A 401 indicates a mismatch between `secret_token` and `TG_WEBHOOK_SECRET` (or `TELEGRAM_WEBHOOK_SECRET`). Subscribe to `channel_post` for channels and `message` for groups.
+4. If the POST returns `directLink` without a chat reply, inspect `reply.ok` and `reply.reason`. A reason of `disabled` means `TG_UPLOAD_NOTIFY` or `TELEGRAM_UPLOAD_NOTIFY` is off. If Telegram rejects the reply, check the bot's posting permissions. If group updates never arrive, check the bot's privacy mode.
+
+Use a Bot API URL that Cloudflare Pages can reach. The `127.0.0.1` example above is for registration from the Bot API machine.
 
 > **About 2GB files:**  
 > With a self-hosted Bot API (`CUSTOM_BOT_API_URL`), when files are sent directly from a Telegram client to a group/channel and returned via Webhook links, you can use the Bot API large-file capability (commonly up to 2GB).  
@@ -423,10 +436,7 @@ Use HuggingFace Datasets API to store files. Files are saved to a Dataset reposi
 4. Add `HF_TOKEN` and `HF_REPO` environment variables in Cloudflare Pages
 5. Redeploy
 
-**Limits:**
-- Regular upload (base64): about 35MB/file
-- LFS upload: up to 50GB/file
-- Total free-tier repository size: about 50GB
+K-Vault automatically selects regular upload or LFS based on the Hugging Face preupload response. The Cloudflare Pages upload endpoints cap each file at 35 MiB before sending it to Hugging Face. Use R2, S3, or WebDAV for larger files.
 
 ---
 
@@ -529,9 +539,9 @@ Allows non-logged-in users to upload files. Site owners can configure whether it
 | S3-compatible storage | 100MB (chunked upload) |
 | Discord (non-Boosted) | 25MB |
 | Discord (Level 2+) | 50-100MB |
-| HuggingFace | 35MB (regular) / 50GB (LFS) |
+| HuggingFace (Cloudflare Pages) | 35 MiB |
 
-> Note: `/api/upload-from-url` currently still applies a 20MB limit for Telegram uploads.
+> On Cloudflare Pages, `/api/upload-from-url` sends files up to 20 MiB to Telegram in Telegram mode. With `R2_BUCKET` bound, larger files automatically go to R2. The endpoint accepts files up to 100 MiB.
 
 ---
 

@@ -104,6 +104,8 @@ curl -X POST "https://your-kvault-domain/api/v1/upload" \
 
 成功：`{"success":true,"file":{"id":"...","name":"cover.png",...},"links":{"download":"...","share":"...","delete":"..."}}`。≤25MB 的重复内容上传会命中 SHA-256 去重索引，响应附加 `"deduplicated": true` 并返回已有文件。
 
+创建受密码保护的链接时，在上传表单中添加 `password`，把 `links.share` 和密码分开提供给接收者。需要短路径时可以同时填写 `slug`。Cloudflare Pages 的签名 Telegram 上传在关闭元数据时无法保存这些分享选项。
+
 ### 3.4 kvault_import_url
 
 | 参数 | 位置 | 必填 | 说明 |

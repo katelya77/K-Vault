@@ -2981,16 +2981,16 @@
                 v-model="file.selected"
               />
               <img
-                :src="getCleanFileUrl(file)"
+                :src="getLocalFileUrl(file) || null"
                 class="result-item-preview"
-                @click="previewImage(getCleanFileUrl(file))"
+                @click="previewImage(getLocalFileUrl(file))"
                 onerror="this.style.display='none'"
               />
               <div class="result-item-info">
                 <div class="result-item-name">{{ getDisplayName(file) }}</div>
                 <a
                   class="result-item-link"
-                  :href="getCleanFileUrl(file)"
+                  :href="getCleanFileUrl(file) || null"
                   target="_blank"
                   rel="noopener noreferrer"
                   :title="formatLink(file)"
@@ -3127,7 +3127,7 @@
             <!-- 图片文件显示缩略图 -->
             <img
               v-if="isImageFile(getDisplayName(item))"
-              :src="getCleanFileUrl(item)"
+              :src="getLocalFileUrl(item) || null"
               @error="handleHistoryImgError($event, item)"
             />
             <!-- 非图片文件显示图标 -->
@@ -5038,9 +5038,10 @@
 
           // 下载文件
           downloadFile(file) {
+            const url = this.getLocalFileUrl(file);
+            if (!url) return;
             const link = document.createElement("a");
-            // 使用核心方法获取干净的文件直链
-            link.href = this.getCleanFileUrl(file);
+            link.href = url;
             // 使用安全的文件名获取方法
             link.download = this.getDisplayName(file);
             link.click();
@@ -5059,7 +5060,8 @@
             // 使用安全的文件名获取方法
             const fileName = this.getDisplayName(file);
             // 使用核心方法获取干净的文件直链
-            const fileUrl = this.getCleanFileUrl(file);
+            const fileUrl = this.getLocalFileUrl(file);
+            if (!fileUrl) return;
             const ext = fileName.split(".").pop().toLowerCase();
 
             // 图片类型 - 保持原生 Lightbox 预览
@@ -5215,13 +5217,12 @@
             return "未知文件";
           },
 
-          // 从 ID、路径或完整 URL 生成该文件上传时选定域名的直链
-          getCleanFileUrl(item) {
-            let rawUrl = item.url || item.path || "";
-            const linkBaseURL = this.getStoredLinkBaseURL(item.linkBaseURL, item.usedPublicBaseUrl);
+          // 从文件记录生成分享直链
+          getCleanFileUrl(item, linkBaseURL = this.getStoredLinkBaseURL(item.linkBaseURL, item.usedPublicBaseUrl)) {
+            const rawUrl = String(item.path || item.url || "");
 
             // 情况1: 已经是完整的 /file/ 直链
-            if (rawUrl.startsWith("https://") && rawUrl.includes("/file/")) {
+            if (/^https?:\/\//i.test(rawUrl) && rawUrl.includes("/file/")) {
               // 提取 /file/ 后面的部分作为 fileId
               const match = rawUrl.match(/\/file\/([^?#]+)/);
               if (match) {
@@ -5247,8 +5248,7 @@
               return `${linkBaseURL}/file/${lastSegment}`;
             }
 
-            // 兜底：返回原始 URL
-            return rawUrl;
+            return "";
           },
 
           getStoredLinkBaseURL(selectedBaseURL, usedPublicBaseUrl) {
@@ -5256,15 +5256,19 @@
             try {
               const parsed = new URL(selectedBaseURL);
               if (["http:", "https:"].includes(parsed.protocol) && !parsed.username && !parsed.password) {
-                return parsed.origin;
+                return `${parsed.origin}${parsed.pathname.replace(/\/+$/, "")}`;
               }
             } catch (e) {}
             return this.baseURL;
           },
 
-          // 从 URL 中提取干净的文件路径（不带域名，格式：/file/xxx.ext）
+          getLocalFileUrl(item) {
+            return this.getCleanFileUrl(item, this.baseURL);
+          },
+
+          // 从 URL 中提取当前站点的文件路径
           getCleanFilePath(item) {
-            const fullUrl = this.getCleanFileUrl(item);
+            const fullUrl = this.getLocalFileUrl(item);
             try {
               const url = new URL(fullUrl);
               return url.pathname;
@@ -5484,7 +5488,7 @@
             if (!url) return url;
             const linkBaseURL = this.getStoredLinkBaseURL(selectedBaseURL, usedPublicBaseUrl);
 
-            // 情况1: /file/https://pan.katelya.eu.org/file/xxx.ext
+            // 情况1: /file/https://files.example.com/file/xxx.ext
             // 或 /file/https://... 这种污染格式
             if (
               url.includes("/file/https://") ||
@@ -5511,7 +5515,7 @@
             }
 
             // 情况3: 正常的完整 URL，保留上传时选定的域名
-            if (url.startsWith("https://") && url.includes("/file/")) {
+            if (/^https?:\/\//i.test(url) && url.includes("/file/")) {
               const match = url.match(/\/file\/([^?#]+)/);
               if (match) {
                 return `${linkBaseURL}/file/${match[1]}`;

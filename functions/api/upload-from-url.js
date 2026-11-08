@@ -17,6 +17,7 @@ import {
 const MAX_FILE_SIZE = 100 * 1024 * 1024;
 const FETCH_TIMEOUT = 30000;
 const MB = 1024 * 1024;
+const TELEGRAM_URL_UPLOAD_LIMIT = 20 * MB;
 
 export async function onRequestPost(context) {
   const { request, env } = context;
@@ -24,7 +25,7 @@ export async function onRequestPost(context) {
   try {
     const body = await request.json();
     const url = String(body?.url || "").trim();
-    const storageMode = String(body?.storageMode || "telegram").toLowerCase();
+    const requestedStorage = String(body?.storageMode || "telegram").toLowerCase();
     const folderPath = normalizeFolderPath(body?.folderPath || body?.folder || "");
 
     if (!url) {
@@ -58,6 +59,9 @@ export async function onRequestPost(context) {
       );
     }
 
+    const storageMode = requestedStorage === "telegram" && fileSize > TELEGRAM_URL_UPLOAD_LIMIT && env.R2_BUCKET
+      ? "r2"
+      : requestedStorage;
     const storageValidation = validateStorageSize(storageMode, fileSize);
     if (!storageValidation.ok) {
       return jsonResponse({ error: storageValidation.message }, storageValidation.status);
@@ -174,7 +178,7 @@ function jsonResponse(data, status = 200) {
 function validateStorageSize(storageMode, fileSize) {
   const limits = {
     telegram: {
-      maxBytes: 20 * MB,
+      maxBytes: TELEGRAM_URL_UPLOAD_LIMIT,
       status: 413,
       message: "Cloudflare Pages 上的 Telegram URL 上传限制为 20MB。较大的文件请使用 R2、S3、WebDAV 或 GitHub。",
     },

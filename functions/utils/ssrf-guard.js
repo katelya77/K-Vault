@@ -57,6 +57,12 @@ function isPrivateIPv6(host) {
   if (value.startsWith('::ffff:')) {
     const mapped = value.slice(7);
     if (mapped.includes('.')) return isPrivateIPv4(mapped);
+    const parts = mapped.match(/^([\da-f]{1,4}):([\da-f]{1,4})$/);
+    if (parts) {
+      const high = Number.parseInt(parts[1], 16);
+      const low = Number.parseInt(parts[2], 16);
+      return isPrivateIPv4([high >> 8, high & 255, low >> 8, low & 255].join('.'));
+    }
   }
   return false;
 }

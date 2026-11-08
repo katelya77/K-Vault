@@ -1049,14 +1049,13 @@
           try {
             const url = new URL(this.publicBaseUrl);
             if (['http:', 'https:'].includes(url.protocol) && !url.username && !url.password) {
-              return url.origin;
+              return `${url.origin}${url.pathname.replace(/\/+$/, '')}`;
             }
           } catch (e) {}
           return '';
         },
         publicLinkAvailable() {
-          return Boolean(this.publicLinkBaseURL) &&
-            new URL(this.publicLinkBaseURL).hostname !== new URL(this.baseURL).hostname;
+          return Boolean(this.publicLinkBaseURL) && this.publicLinkBaseURL !== this.baseURL;
         },
         isAllSelected() {
           return this.filteredImages.length > 0 && this.filteredImages.every(img => img.selected);
@@ -1099,7 +1098,7 @@
         async loadPublicBaseUrl() {
           this.publicBaseUrl = '';
           try {
-            const response = await fetch('/api/status', { credentials: 'include' });
+            const response = await fetch('/api/status?view=public-links');
             if (!response.ok) return;
             const status = await response.json();
             this.publicBaseUrl = status.publicBaseUrl || '';

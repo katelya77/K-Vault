@@ -6,7 +6,7 @@
     "build": "node -e \"console.log('No build step required. For Cloudflare Pages Git integration, leave Build command and Build output directory empty.')\"",
     "ci-test": "concurrently --kill-others --success first \"npm start\" \"wait-on http://localhost:8080 && mocha --exit\"",
     "test": "mocha",
-    "start": "npx wrangler pages dev ./ --kv \"img_url\" --r2=R2_BUCKET --compatibility-date=2026-05-03 --port 8080 --binding BASIC_USER=admin --binding BASIC_PASS=123 --persist-to ./data",
+    "start": "node scripts/pages-dev.js",
     "pages:r2:doctor": "node scripts/cloudflare-pages-r2-doctor.js",
     "pages:deploy": "npx wrangler pages deploy .",
     "docker:init-env": "node scripts/bootstrap-env.js",

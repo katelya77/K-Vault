@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-function loadUploadPage(savedHistory = [], fetchImpl) {
+function loadUploadPage(savedHistory = [], fetchImpl, onDownload) {
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   const script = html.match(/<script>\s*(const LOCAL_PREVIEW_PAGE[\s\S]*?)<\/script>/);
   assert.ok(script, 'upload page script should exist');
@@ -11,7 +11,11 @@ function loadUploadPage(savedHistory = [], fetchImpl) {
   const storage = new Map([['uploadHistory', JSON.stringify(savedHistory)]]);
   vm.runInNewContext(script[1], {
     URL,
-    document: { location: { origin: 'https://site-a.example' } },
+    URLSearchParams,
+    document: {
+      location: { origin: 'https://site-a.example' },
+      createElement() { return { click() { onDownload?.(this.href); } }; },
+    },
     fetch: fetchImpl,
     localStorage: {
       getItem(key) { return storage.get(key) || null; },
@@ -117,12 +121,37 @@ describe('Upload result public domain option', function () {
     assert.equal(page.formatLink(page.uploadedFiles[0]), 'https://images-b.example/file/photo.jpg');
   });
 
+  it('keeps previews, downloads and file paths on the site when sharing via a prefixed public base', function () {
+    let downloadUrl;
+    const page = loadUploadPage([], undefined, url => { downloadUrl = url; });
+    const file = {
+      name: 'notes.txt',
+      url: 'https://images-b.example/cache/file/r2:notes.txt',
+      path: '/file/r2:notes.txt',
+      linkBaseURL: 'https://images-b.example/cache/',
+      usedPublicBaseUrl: true,
+    };
+
+    assert.equal(page.formatLink(file), 'https://images-b.example/cache/file/r2:notes.txt');
+    assert.equal(page.getLocalFileUrl(file), 'https://site-a.example/file/r2:notes.txt');
+    assert.equal(page.getCleanFilePath(file), '/file/r2:notes.txt');
+    page.openPreview(file);
+    assert.equal(page.previewData.url, 'https://site-a.example/file/r2:notes.txt');
+    page.downloadFile(file);
+    assert.equal(downloadUrl, 'https://site-a.example/file/r2:notes.txt');
+  });
+
+  it('does not return an unsupported link scheme as a clickable upload result', function () {
+    const page = loadUploadPage();
+    assert.equal(page.getCleanFileUrl({ url: 'javascript://%0Aalert(1)' }), '');
+  });
+
   it('disables the public domain choice when no valid URL is configured', async function () {
     const { onRequestGet } = await import('../functions/api/status.js');
     const validResponse = await onRequestGet({
       env: { PUBLIC_BASE_URL: 'https://images-b.example/cache/' },
     });
-    assert.equal((await validResponse.json()).publicBaseUrl, 'https://images-b.example');
+    assert.equal((await validResponse.json()).publicBaseUrl, 'https://images-b.example/cache');
 
     const response = await onRequestGet({ env: { PUBLIC_BASE_URL: 'javascript:alert(1)' } });
     assert.equal(response.status, 200);
