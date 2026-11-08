@@ -1,11 +1,11 @@
 import { onRequestPost as uploadInternal } from '../../upload.js';
 import { parseSignedTelegramFileId, shouldWriteTelegramMetadata } from '../../utils/telegram.js';
 import { checkUploadPolicy } from '../../utils/policy-enforce.js';
-import { apiError, apiSuccess, buildAbsoluteUrl, parsePositiveInt } from '../../utils/api-v1.js';
+import { normalizeFolderPath } from '../../utils/folder-path.js';
+import { apiError, apiSuccess, buildAbsoluteUrl, parsePositiveInt, readIdempotentResponse, saveIdempotentResponse } from '../../utils/api-v1.js';
 
 const STORAGE_PREFIXES = ['r2:', 's3:', 'discord:', 'hf:', 'webdav:', 'github:', 'img:', 'vid:', 'aud:', 'doc:', ''];
 const SHARE_SLUG_KEY_PREFIX = 'share_slug:';
-const IDEMPOTENCY_TTL_SECONDS = 24 * 3600;
 const DEDUP_TTL_SECONDS = 90 * 24 * 3600;
 const DEDUP_MAX_INLINE_BYTES = 25 * 1024 * 1024; // pre-upload dedup only for small files
 
@@ -25,38 +25,6 @@ function fnv1aHex(input) {
     hash = Math.imul(hash, 0x01000193) >>> 0;
   }
   return hash.toString(16).padStart(8, '0');
-}
-
-async function persistUploadSideEffects(env, apiToken, idempotencyKey, contentSha256, info) {
-  if (!env?.img_url) return;
-  const body = {
-    success: true,
-    file: {
-      id: info.canonicalId || info.publicId,
-      name: info.fileName,
-      size: info.fileSize,
-      type: info.mime,
-      storage: info.storageType,
-      uploadedAt: new Date(info.uploadedAt || Date.now()).toISOString(),
-      ...(contentSha256 ? { sha256: contentSha256 } : {}),
-    },
-    links: {
-      download: buildAbsoluteUrl(info.request, `/file/${encodeURIComponent(info.publicId)}`),
-      share: buildAbsoluteUrl(info.request, `/s/${encodeURIComponent(info.shareId || info.publicId)}`),
-      delete: buildAbsoluteUrl(info.request, `/api/v1/file/${encodeURIComponent(info.canonicalId || info.publicId)}`),
-    },
-    deduplicated: false,
-  };
-  if (idempotencyKey) {
-    try {
-      await env.img_url.put(idempotencyStoreKey(apiToken?.id, idempotencyKey), JSON.stringify({ status: 200, body, createdAt: Date.now() }), { expirationTtl: IDEMPOTENCY_TTL_SECONDS });
-    } catch { /* snapshot failures are non-fatal */ }
-  }
-  if (contentSha256) {
-    try {
-      await env.img_url.put(`sha_dup:${contentSha256}`, JSON.stringify({ publicId: info.publicId, fileName: info.fileName, size: info.fileSize, mime: info.mime, storage: info.storageType, uploadedAt: body.file.uploadedAt }), { expirationTtl: DEDUP_TTL_SECONDS });
-    } catch { /* dedup index failures are non-fatal */ }
-  }
 }
 
 function normalizeStorageType(name = '', metadata = {}) {
@@ -245,17 +213,9 @@ export async function onRequestPost(context) {
   const apiToken = context.data?.apiToken || null;
   // Idempotency replay (requirement #11): same key returns the saved response.
   const idempotencyKey = String(request.headers.get('Idempotency-Key') || '').trim().slice(0, 200);
-  if (idempotencyKey && env?.img_url) {
-    try {
-      const saved = await env.img_url.get(idempotencyStoreKey(apiToken?.id, idempotencyKey), { type: 'json' });
-      if (saved?.status && saved?.body) {
-        return new Response(JSON.stringify(saved.body), {
-          status: saved.status,
-          headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'Idempotency-Replayed': 'true' },
-        });
-      }
-    } catch { /* replay lookup failure is non-fatal */ }
-  }
+  const replayKey = idempotencyKey ? idempotencyStoreKey(apiToken?.id, idempotencyKey) : '';
+  const replay = await readIdempotentResponse(env, replayKey);
+  if (replay) return replay;
 
   let formData;
   try {
@@ -281,7 +241,7 @@ export async function onRequestPost(context) {
   }
 
   // Per-token policy enforcement (requirement #10).
-  const folderPath = String(formData.get('folderPath') || formData.get('folder') || url.searchParams.get('folder') || '');
+  const folderPath = normalizeFolderPath(formData.get('folderPath') || formData.get('folder') || url.searchParams.get('folder'));
   const deduplicate = String(formData.get('deduplicate') || url.searchParams.get('deduplicate') || '').toLowerCase() === 'true';
   const policyCheck = checkUploadPolicy(apiToken, {
     storage,
@@ -320,15 +280,8 @@ export async function onRequestPost(context) {
           },
           deduplicated: true,
         };
-        if (idempotencyKey) {
-          try {
-            await env.img_url.put(idempotencyStoreKey(apiToken?.id, idempotencyKey), JSON.stringify({ status: 200, body: dedupBody, createdAt: Date.now() }), { expirationTtl: IDEMPOTENCY_TTL_SECONDS });
-          } catch { /* non-fatal */ }
-        }
-        return new Response(JSON.stringify(dedupBody), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
-        });
+        await saveIdempotentResponse(env, replayKey, dedupBody, 200);
+        return apiSuccess(dedupBody);
       }
     } catch { /* dedup failures fall through to a normal upload */ }
   }
@@ -341,6 +294,7 @@ export async function onRequestPost(context) {
   if (storage) {
     uploadForm.set('storageMode', storage);
   }
+  uploadForm.set('folderPath', folderPath);
 
   const headers = new Headers(request.headers);
   headers.delete('content-type');
@@ -413,19 +367,7 @@ export async function onRequestPost(context) {
     : '';
   const shareId = shareSlug || publicId;
 
-  await persistUploadSideEffects(env, apiToken, idempotencyKey, contentSha256, {
-    request,
-    publicId,
-    canonicalId,
-    fileName,
-    fileSize,
-    mime: mapMimeType(fileName, file.type || 'application/octet-stream'),
-    storageType: normalizeStorageType(canonicalId, metadata),
-    uploadedAt: uploadedAtValue,
-    shareId,
-  });
-
-  return apiSuccess({
+  const responseBody = {
     file: {
       id: canonicalId,
       name: fileName,
@@ -441,7 +383,17 @@ export async function onRequestPost(context) {
         ? null
         : buildAbsoluteUrl(request, `/api/v1/file/${encodeURIComponent(canonicalId)}`),
     },
-  });
+  };
+  await saveIdempotentResponse(env, replayKey, responseBody, 200);
+  if (contentSha256) {
+    const { name, size, type, storage, uploadedAt } = responseBody.file;
+    try {
+      await env.img_url.put(`sha_dup:${contentSha256}`, JSON.stringify({
+        publicId, fileName: name, size, mime: type, storage, uploadedAt,
+      }), { expirationTtl: DEDUP_TTL_SECONDS });
+    } catch { /* dedup index failures are non-fatal */ }
+  }
+  return apiSuccess(responseBody);
 }
 
 export async function onRequest(context) {

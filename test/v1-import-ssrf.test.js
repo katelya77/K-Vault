@@ -1,7 +1,9 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert');
+const dns = require('node:dns').promises;
 const { isPrivateHost } = require('../server/lib/utils/ssrf-shared');
+const { assertSafeRemoteUrl } = require('../server/lib/utils/ssrf-guard');
 const { createApp } = require('../server/app');
 
 describe('SSRF shared host classification', function () {
@@ -18,6 +20,9 @@ describe('SSRF shared host classification', function () {
     '100.127.255.255',
     '0.0.0.0',
     '::1',
+    '::ffff:127.0.0.1',
+    '::ffff:7f00:1',
+    '::ffff:a9fe:a9fe',
     'fe80::1',
     'fc00::1',
     'localhost',
@@ -26,6 +31,7 @@ describe('SSRF shared host classification', function () {
 
   const publicTargets = [
     '8.8.8.8',
+    '::ffff:808:808',
     '1.1.1.1',
     '172.32.0.1',
     '100.128.0.1',
@@ -43,6 +49,20 @@ describe('SSRF shared host classification', function () {
       assert.strictEqual(isPrivateHost(host), false, host);
     });
   }
+
+  it('resolves single-label Docker hosts before allowing a fetch', async function () {
+    const lookup = dns.lookup;
+    dns.lookup = async (hostname) => {
+      assert.strictEqual(hostname, 'internalservice');
+      return [{ address: '10.1.2.3', family: 4 }];
+    };
+    try {
+      const result = await assertSafeRemoteUrl('http://internalservice/image.png');
+      assert.strictEqual(result.code, 'SSRF_BLOCKED');
+    } finally {
+      dns.lookup = lookup;
+    }
+  });
 });
 
 describe('API v1 import SSRF protection (Docker)', function () {

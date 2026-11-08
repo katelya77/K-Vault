@@ -17,6 +17,7 @@ class UploadService {
   }
 
   async uploadFile({
+    storageConfig,
     fileName,
     mimeType,
     fileSize,
@@ -25,9 +26,9 @@ class UploadService {
     storageMode,
     folderPath,
   }) {
-    const storageConfig = this.resolveStorage({ storageId, storageMode });
-    const adapter = this.storageFactory.createAdapter(storageConfig);
-    const storageType = normalizeStorageType(storageConfig.type);
+    const selectedStorage = storageConfig || this.resolveStorage({ storageId, storageMode });
+    const adapter = this.storageFactory.createAdapter(selectedStorage);
+    const storageType = normalizeStorageType(selectedStorage.type);
     const normalizedFolderPath = normalizeFolderPath(folderPath);
 
     const publicId = buildPublicFileId(storageType, fileName, mimeType);
@@ -51,7 +52,7 @@ class UploadService {
 
     const fileRecord = this.fileRepo.create({
       id: publicId,
-      storageConfigId: storageConfig.id,
+      storageConfigId: selectedStorage.id,
       storageType,
       storageKey,
       fileName,
@@ -65,8 +66,8 @@ class UploadService {
       file: fileRecord,
       src: `/file/${encodeURIComponent(publicId)}`,
       storage: {
-        id: storageConfig.id,
-        name: storageConfig.name,
+        id: selectedStorage.id,
+        name: selectedStorage.name,
         type: storageType,
       },
     };

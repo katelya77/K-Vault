@@ -375,6 +375,92 @@ describe('API v1 file share limits', function () {
 });
 
 
+describe('API v1 upload folder policy (Pages)', function () {
+  it('checks the same canonical folder that is used for the upload', async function () {
+    const { onRequestPost: upload } = await import('../functions/api/v1/upload.js');
+    const { onRequest: middleware } = await import('../functions/api/v1/_middleware.js');
+    const { env, token } = await createEnvAndToken(['upload'], { policies: { folderPrefix: 'blog' } });
+    env.disable_telemetry = 'true';
+
+    async function uploadTo(fields, query = '') {
+      const form = new FormData();
+      form.append('file', new Blob(['image-bytes'], { type: 'image/png' }), 'image.png');
+      form.set('storage', 'r2');
+      for (const [name, value] of Object.entries(fields)) form.set(name, value);
+      const context = {
+        request: new Request(`https://example.com/api/v1/upload${query}`, {
+          method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form,
+        }),
+        env,
+        data: {},
+        waitUntil: () => {},
+      };
+      return middleware({ ...context, next: () => upload({ ...context, next: () => new Response() }) });
+    }
+
+    for (const folderPath of ['blog-other', 'blog/../outside', 'blog\\..\\outside']) {
+      const response = await uploadTo({ folderPath });
+      assert.strictEqual(response.status, 403, folderPath);
+      assert.strictEqual((await response.json()).error.code, 'POLICY_FOLDER_DENIED');
+      assert.strictEqual(env.R2_BUCKET.objects.size, 0);
+    }
+    for (const [fields, query, expected] of [
+      [{ folderPath: 'blog' }, '', 'blog'],
+      [{ folder: 'blog/child' }, '', 'blog/child'],
+      [{}, '?folder=blog%2Fquery', 'blog/query'],
+    ]) {
+      const response = await uploadTo(fields, query);
+      assert.strictEqual(response.status, 200);
+      const { file } = await response.json();
+      assert.strictEqual((await env.img_url.getWithMetadata(file.id)).metadata.folderPath, expected);
+    }
+  });
+});
+
+describe('API v1 import policies and retries (Pages)', function () {
+  it('checks the sniffed MIME and replays a successful import without fetching or writing again', async function () {
+    const { onRequestPost: importFile } = await import('../functions/api/v1/import.js');
+    const { env, tokenInfo } = await createEnvAndToken(['upload'], {
+      policies: { allowedMimeTypes: ['image/png'], folderPrefix: 'blog' },
+    });
+    const originalFetch = globalThis.fetch;
+    let fetchCalls = 0;
+    globalThis.fetch = async () => {
+      fetchCalls += 1;
+      const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+      return new Response(bytes, { headers: { 'Content-Type': 'application/octet-stream' } });
+    };
+    function run(folder) {
+      return importFile({
+        env, data: { apiToken: tokenInfo },
+        request: new Request('https://example.com/api/v1/import', {
+          method: 'POST',
+          headers: { 'Idempotency-Key': 'import-cover' },
+          body: JSON.stringify({ url: 'https://source.example/image.png', storage: 'r2', folder }),
+        }),
+      });
+    }
+    try {
+      const denied = await run('blog/../outside');
+      assert.strictEqual(denied.status, 403);
+      assert.strictEqual((await denied.json()).error.code, 'POLICY_FOLDER_DENIED');
+      assert.strictEqual(fetchCalls, 0);
+      const first = await run('blog/child');
+      assert.strictEqual(first.status, 201);
+      const payload = await first.json();
+      assert.strictEqual(payload.data.file.mime, 'image/png');
+      const second = await run('blog/child');
+      assert.strictEqual(second.status, first.status);
+      assert.strictEqual(second.headers.get('Idempotency-Replayed'), 'true');
+      assert.deepStrictEqual(await second.json(), payload);
+      assert.strictEqual(fetchCalls, 1);
+      assert.strictEqual(env.R2_BUCKET.objects.size, 1);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
 describe('API v1 upload low-KV-write mode', function () {
   function createLowWriteEnv() {
     return {
@@ -403,6 +489,35 @@ describe('API v1 upload low-KV-write mode', function () {
       globalThis.fetch = originalFetch;
     };
   }
+
+  it('replays the original signed Telegram response with no delete link', async function () {
+    const { onRequestPost: upload } = await import('../functions/api/v1/upload.js');
+    const env = createLowWriteEnv();
+    const restoreFetch = mockTelegramFetch();
+    function run() {
+      const body = new FormData();
+      body.append('file', new Blob(['image-bytes'], { type: 'image/png' }), 'image.png');
+      return upload({
+        request: new Request('https://example.com/api/v1/upload', {
+          method: 'POST', headers: { 'Idempotency-Key': 'telegram-upload' }, body,
+        }),
+        env,
+        data: { apiToken: { id: 'test-token' } },
+        next: () => new Response(),
+      });
+    }
+    try {
+      const first = await run();
+      const payload = await first.json();
+      assert.strictEqual(first.status, 200);
+      assert.strictEqual(payload.links.delete, null);
+      const second = await run();
+      assert.strictEqual(second.headers.get('Idempotency-Replayed'), 'true');
+      assert.deepStrictEqual(await second.json(), payload);
+    } finally {
+      restoreFetch();
+    }
+  });
 
   it('uploads signed Telegram files without metadata KV access when metadata is disabled', async function () {
     const { onRequestPost: upload } = await import('../functions/api/v1/upload.js');

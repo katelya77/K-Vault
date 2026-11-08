@@ -13,8 +13,9 @@ import {
   shouldUseSignedTelegramLinks,
   shouldWriteTelegramMetadata,
 } from '../../utils/telegram.js';
-import { apiError, apiSuccess } from '../../utils/api-v1.js';
+import { apiError, apiSuccess, readIdempotentResponse, saveIdempotentResponse } from '../../utils/api-v1.js';
 import { checkUploadPolicy } from '../../utils/policy-enforce.js';
+import { normalizeFolderPath } from '../../utils/folder-path.js';
 import { MAX_REDIRECTS, sniffImageMime, validateRedirectLocation, validateRemoteUrl } from '../../utils/ssrf-guard.js';
 
 /**
@@ -41,18 +42,6 @@ class ImportError extends Error {
     this.code = code;
     this.status = status;
   }
-}
-
-function normalizeFolderPath(value) {
-  const raw = String(value || '').replace(/\\/g, '/').trim();
-  const output = [];
-  for (const part of raw.split('/')) {
-    const piece = part.trim();
-    if (!piece || piece === '.') continue;
-    if (piece === '..') { output.pop(); continue; }
-    output.push(piece);
-  }
-  return output.join('/');
 }
 
 function joinStoragePath(folderPath, fileName) {
@@ -428,8 +417,6 @@ export async function onRequestPost(context) {
     // Policy gate (requirement #10) — checked before any network activity.
     const policyCheck = checkUploadPolicy(token, {
       storage,
-      mime: 'image/*', // exact MIME enforced after sniffing below
-      sizeBytes: maxBytes,
       folderPath,
       request,
     });
@@ -437,24 +424,12 @@ export async function onRequestPost(context) {
       return apiError(policyCheck.code, policyCheck.message, policyCheck.status);
     }
 
-    // Pre-check folder policy with a placeholder MIME; exact MIME policy is
-    // enforced right after sniffing.
-    const mimePolicyCheck = checkUploadPolicy(token, {
-      storage,
-      mime: 'application/octet-stream',
-      sizeBytes: maxBytes,
-      folderPath,
-      request,
-    });
-    if (mimePolicyCheck.ok === false && mimePolicyCheck.code === 'POLICY_FOLDER_DENIED') {
-      return apiError(mimePolicyCheck.code, mimePolicyCheck.message, mimePolicyCheck.status);
-    }
-    if (mimePolicyCheck.ok === false && mimePolicyCheck.code === 'POLICY_SOURCE_DENIED') {
-      return apiError(mimePolicyCheck.code, mimePolicyCheck.message, mimePolicyCheck.status);
-    }
-    if (mimePolicyCheck.ok === false && mimePolicyCheck.code === 'POLICY_STORAGE_DENIED') {
-      return apiError(mimePolicyCheck.code, mimePolicyCheck.message, mimePolicyCheck.status);
-    }
+    const idempotencyKey = String(request.headers.get('Idempotency-Key') || '').trim().slice(0, 200);
+    const replayKey = token?.id && idempotencyKey && env.img_url
+      ? `idem:import:${token.id}:${await sha256HexBuffer(new TextEncoder().encode(idempotencyKey))}`
+      : '';
+    const replay = await readIdempotentResponse(env, replayKey);
+    if (replay) return replay;
 
     // Strict remote fetch (SSRF hardening, streaming size cap).
     const fetched = await fetchRemoteStrict(rawUrl, maxBytes);
@@ -479,7 +454,7 @@ export async function onRequestPost(context) {
         const existing = await env.img_url.get(`sha_dup:${sha256}`, { type: 'json' });
         if (existing?.directId) {
           const origin = new URL(request.url).origin;
-          return apiSuccess({
+          const responseBody = {
             data: {
               file: {
                 id: existing.fileId,
@@ -496,7 +471,9 @@ export async function onRequestPost(context) {
               source: { url: fetched.finalUrl.href },
               deduplicated: true,
             },
-          });
+          };
+          await saveIdempotentResponse(env, replayKey, responseBody, 200);
+          return apiSuccess(responseBody);
         }
       } catch { /* dedup index read failure is non-fatal */ }
     }
@@ -537,7 +514,7 @@ export async function onRequestPost(context) {
     }
 
     const origin = new URL(request.url).origin;
-    return apiSuccess({
+    const responseBody = {
       data: {
         file: {
           id: uploadResult.fileId,
@@ -554,7 +531,9 @@ export async function onRequestPost(context) {
         source: { url: fetched.finalUrl.href },
         deduplicated: false,
       },
-    }, 201);
+    };
+    await saveIdempotentResponse(env, replayKey, responseBody, 201);
+    return apiSuccess(responseBody, 201);
   } catch (error) {
     if (error instanceof ImportError) {
       return apiError(error.code, error.message, error.status);
